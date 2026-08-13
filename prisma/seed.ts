@@ -204,6 +204,12 @@ function daysFromNow(n: number) {
 }
 
 async function main() {
+  const existing = await prisma.user.count();
+  if (existing > 0 && process.env.FORCE_SEED !== "1") {
+    console.log("SEED_SKIPPED");
+    return;
+  }
+
   await prisma.reportExport.deleteMany();
   await prisma.dailyReport.deleteMany();
   await prisma.inboxMessage.deleteMany();

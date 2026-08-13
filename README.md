@@ -40,8 +40,19 @@ npm run build
 npx next start -p 3003
 ```
 
-复制 `.env.example` 为 `.env`。可选配置 `OPENAI_API_KEY`。
+复制 `.env.example` 为 `.env`。本地 Postgres：`docker compose up -d`，然后 `npm run db:setup`。可选配置 `OPENROUTER_API_KEY`。
+
+## Railway
+
+1. 在 [Railway](https://railway.com/new) 从 GitHub 部署本仓库，或安装 CLI 后运行 `railway up`。
+2. 在同一项目里 **+ New → Database → PostgreSQL**，并把 `DATABASE_URL` 引用到应用服务。
+3. 设置变量：`NEXTAUTH_SECRET`、`NEXTAUTH_URL=https://<your-domain>`、`AUTH_TRUST_HOST=true`。可选：`OPENROUTER_API_KEY`。
+4. **Settings → Networking → Generate Domain**。
+
+`railway.json` 会在发布前跑 `prisma migrate deploy` 并在空库时 seed。演示账号：`admin@axon.demo` / `demo1234`。
+
+上传的照片存在容器磁盘上，重新部署后会丢失；需要长期保存时再加 Railway Volume 或对象存储。
 
 ## 技术栈
 
-Next.js 15 · TypeScript · Tailwind · Prisma · SQLite · NextAuth · Recharts · OpenAI SDK
+Next.js 15 · TypeScript · Tailwind · Prisma · PostgreSQL · NextAuth · Recharts · OpenAI SDK

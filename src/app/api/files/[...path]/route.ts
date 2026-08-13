@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile, access } from "fs/promises";
 import path from "path";
 import { requireSession } from "@/lib/session";
+import { getStoredFile, objectKeyFromPath } from "@/lib/storage";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -25,7 +25,7 @@ const MIME: Record<string, string> = {
 
 /**
  * Serve uploads (evidence photos, exports) with correct MIME.
- * Path example: /api/files/evidence/xxx.jpg  → public/uploads/evidence/xxx.jpg
+ * Path example: /api/files/evidence/xxx.jpg  → uploads/evidence/xxx.jpg
  */
 export async function GET(
   _req: NextRequest,
@@ -38,25 +38,23 @@ export async function GET(
   if (!rel || rel.includes("..")) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
-  const abs = path.join(process.cwd(), "public", "uploads", rel);
-  try {
-    await access(abs);
-    const buf = await readFile(abs);
-    const ext = path.extname(abs).toLowerCase();
-    const type = MIME[ext] || "application/octet-stream";
-    const inline =
-      type.startsWith("image/") ||
-      type.startsWith("audio/") ||
-      ext === ".pdf" ||
-      ext === ".html";
-    return new NextResponse(buf, {
-      headers: {
-        "Content-Type": type,
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${path.basename(abs)}"`,
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
-  } catch {
+  const key = objectKeyFromPath(rel);
+  const buf = await getStoredFile(key);
+  if (!buf) {
     return NextResponse.json({ error: "File not found", path: rel }, { status: 404 });
   }
+  const ext = path.extname(key).toLowerCase();
+  const type = MIME[ext] || "application/octet-stream";
+  const inline =
+    type.startsWith("image/") ||
+    type.startsWith("audio/") ||
+    ext === ".pdf" ||
+    ext === ".html";
+  return new NextResponse(new Uint8Array(buf), {
+    headers: {
+      "Content-Type": type,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${path.basename(key)}"`,
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
 }

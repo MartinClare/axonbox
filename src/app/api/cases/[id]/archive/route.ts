@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import JSZip from "jszip";
-import { readFile } from "fs/promises";
 import path from "path";
 import { saveBuffer } from "@/lib/upload";
+import { getStoredFile, objectKeyFromPath } from "@/lib/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,9 +40,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   for (const e of item.evidence) {
     if (e.filePath) {
       try {
-        const abs = path.join(process.cwd(), "public", e.filePath.replace(/^\//, ""));
-        const buf = await readFile(abs);
-        zip.file(path.basename(e.filePath), buf);
+        const buf = await getStoredFile(objectKeyFromPath(e.filePath));
+        if (buf) zip.file(path.basename(e.filePath), buf);
       } catch {
         /* skip missing */
       }

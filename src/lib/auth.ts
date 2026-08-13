@@ -6,7 +6,7 @@ import { prisma } from "./prisma";
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
-  // AUTH_TRUST_HOST=true in .env allows LAN IP / phone access
+  // Railway / reverse-proxy hosts: trust the request host when NEXTAUTH_URL is set
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
     CredentialsProvider({
