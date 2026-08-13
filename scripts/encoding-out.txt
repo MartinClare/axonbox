@@ -1,0 +1,53 @@
+﻿{
+  "cases": [
+    {
+      "title": "B鍗€妯℃澘浣滄キ缂哄皯瀹夊叏鍦嶆瑒",
+      "location": "B鍗€ - 5妯撳钩鍙?,
+      "caseNo": "C-2024-0610-001"
+    },
+    {
+      "title": "A鍗€3妯撻嫾绛嬪闇?,
+      "location": "A鍗€ - 3妯?,
+      "caseNo": "C-2024-0610-002"
+    },
+    {
+      "title": "娲炲彛鏈皝闁?,
+      "location": "C鍗€ - 2妯?,
+      "caseNo": "C-2024-0610-003"
+    },
+    {
+      "title": "鏉愭枡鍫嗘斁闃荤閫氶亾",
+      "location": "B鍗€ - 鍦伴潰灞?,
+      "caseNo": "C-2024-0610-004"
+    },
+    {
+      "title": "澶栫墕閫插害钀藉緦",
+      "location": "涓绘〒鏉辩珛闈?,
+      "caseNo": "C-2024-0610-005"
+    }
+  ],
+  "users": [
+    {
+      "name": "鍦扮洡缍撶悊 闄崇敓",
+      "email": "admin@axon.demo"
+    },
+    {
+      "name": "鐝惧牬涓荤 鏉庣敓",
+      "email": "supervisor@axon.demo"
+    },
+    {
+      "name": "鍒嗗垽璨犺铂浜?鐜嬬敓",
+      "email": "sub@axon.demo"
+    }
+  ],
+  "project": {
+    "id": "cms5ojpse00037mym3zfov9x9",
+    "name": "AXON 绀虹瘎鍦扮洡 鈥?涔濋緧鐏ｅ晢妤稖鍚堥珨",
+    "siteCode": "KB-2024-A",
+    "address": "涔濋緧鐏ｈ嚚鑿",
+    "weather": "28掳C 鏅?,
+    "createdAt": "2026-07-29T06:04:37.071Z",
+    "updatedAt": "2026-07-29T06:04:37.071Z"
+  }
+}
+title codepoints: 42 5340 6a21 677f 4f5c 696d 7f3a 5c11 5b89 5168 570d 6b04

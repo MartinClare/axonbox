@@ -1,0 +1,271 @@
+@import "tailwindcss";
+
+/*
+  AxonBox engineering palette
+  Navy #003049 · Red #D62828 · Orange #F77F00 · Yellow #FECE32 · Cream #FBF3CA
+*/
+:root {
+  --axon-ink: #003049;
+  --axon-navy: #003049;
+  --axon-blue: #02445f;
+  --axon-steel: #2a5a72;
+  --axon-sand: #f7efc4;
+  --axon-line: #d9cdb0;
+  --axon-line-strong: #c4b48a;
+  --axon-cream: #fbf3ca;
+  --axon-cream-deep: #f3e7b0;
+  --axon-accent: #f77f00;
+  --axon-signal: #fece32;
+  --axon-danger: #d62828;
+  --axon-ok: #1f6b4a;
+  --axon-white: #fffdf6;
+  --background: #fbf3ca;
+  --foreground: #003049;
+  --font-cjk: var(--font-plex), "IBM Plex Sans", "PingFang TC", "Microsoft JhengHei",
+    "Noto Sans TC", "Heiti TC", "Segoe UI", sans-serif;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-panel: 0 1px 0 rgba(0, 48, 73, 0.04), 0 8px 24px rgba(0, 48, 73, 0.05);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-cjk);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  color: var(--foreground);
+  font-family: var(--font-cjk);
+  text-rendering: optimizeLegibility;
+  background-color: var(--axon-cream);
+  background-image:
+    linear-gradient(rgba(0, 48, 73, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 48, 73, 0.035) 1px, transparent 1px),
+    radial-gradient(900px 420px at 0% 0%, rgba(247, 127, 0, 0.1), transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, rgba(254, 206, 50, 0.22), transparent 50%),
+    linear-gradient(180deg, #fbf3ca 0%, #f7efc4 100%);
+  background-size:
+    28px 28px,
+    28px 28px,
+    auto,
+    auto,
+    auto;
+  background-attachment: fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+/* —— Controls —— */
+.axon-input {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--axon-line);
+  background: var(--axon-white);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.9375rem;
+  color: var(--axon-ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.axon-input::placeholder {
+  color: rgba(0, 48, 73, 0.35);
+}
+.axon-input:focus {
+  border-color: var(--axon-accent);
+  box-shadow: 0 0 0 3px rgba(247, 127, 0, 0.18);
+}
+
+.axon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  padding: 0.65rem 1.1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: transform 0.12s ease, background 0.15s ease, opacity 0.15s ease;
+}
+.axon-btn:disabled {
+  opacity: 0.42;
+}
+.axon-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.axon-btn-primary {
+  background: var(--axon-ink);
+  color: #fff;
+  box-shadow: 0 2px 0 rgba(0, 48, 73, 0.2);
+}
+.axon-btn-primary:hover:not(:disabled) {
+  background: #02445f;
+}
+.axon-btn-accent {
+  background: var(--axon-accent);
+  color: #fff;
+  box-shadow: 0 2px 0 rgba(180, 90, 0, 0.25);
+}
+.axon-btn-accent:hover:not(:disabled) {
+  background: #e06f00;
+}
+.axon-btn-ok {
+  background: var(--axon-ok);
+  color: #fff;
+}
+.axon-btn-ghost {
+  border: 1px solid var(--axon-line-strong);
+  background: var(--axon-white);
+  color: var(--axon-ink);
+}
+.axon-btn-ghost:hover:not(:disabled) {
+  border-color: var(--axon-accent);
+  background: #fff8e4;
+}
+
+.axon-panel {
+  position: relative;
+  border: 1px solid var(--axon-line);
+  background: rgba(255, 253, 246, 0.92);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(6px);
+}
+
+.axon-panel-signal {
+  border-left: 3px solid var(--axon-signal);
+}
+
+.axon-title {
+  font-family: var(--font-cjk);
+  letter-spacing: -0.02em;
+  color: var(--axon-ink);
+  font-weight: 650;
+}
+
+.axon-muted {
+  color: rgba(0, 48, 73, 0.58);
+}
+
+.axon-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--axon-accent);
+}
+
+.axon-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.axon-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 48, 73, 0.08);
+  overflow: hidden;
+}
+.axon-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--axon-ink), var(--axon-accent));
+}
+
+/* Page rhythm — desktop vs phone */
+.axon-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+@media (min-width: 768px) {
+  .axon-page {
+    gap: 1.75rem;
+  }
+}
+
+.axon-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgba(0, 48, 73, 0.08);
+}
+
+.axon-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+@media (min-width: 640px) {
+  .axon-quick-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+}
+
+.axon-quick-link {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--axon-line);
+  background: var(--axon-white);
+  color: var(--axon-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+.axon-quick-link:hover {
+  border-color: var(--axon-accent);
+  box-shadow: 0 4px 14px rgba(247, 127, 0, 0.12);
+  transform: translateY(-1px);
+}
+.axon-quick-link .axon-quick-ico {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--axon-sand);
+  color: var(--axon-ink);
+  border: 1px solid rgba(0, 48, 73, 0.08);
+}
+
+/* Mobile bottom-nav safe spacing handled in layout */
+@media (max-width: 767px) {
+  .axon-btn,
+  .axon-input {
+    font-size: 16px; /* avoid iOS zoom */
+  }
+  .axon-input {
+    font-size: 1rem;
+  }
+}

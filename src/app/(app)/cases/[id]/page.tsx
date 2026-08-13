@@ -1,0 +1,357 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { Timeline } from "@/components/Timeline";
+import {
+  CATEGORY_LABELS,
+  CASE_STATUS_LABELS,
+  SEVERITY_LABELS,
+  STATUS_COLORS,
+  CATEGORY_COLORS,
+  cn,
+  daysRemaining,
+  formatDate,
+} from "@/lib/labels";
+import { mediaUrl } from "@/lib/media";
+import { apiFetch, asArray } from "@/lib/api-client";
+
+type CaseDetail = {
+  id: string;
+  caseNo: string;
+  title: string;
+  description: string;
+  category: string;
+  severity: string;
+  location: string;
+  status: string;
+  recommendation: string | null;
+  dueAt: string | null;
+  discoveredAt: string;
+  assigneeId?: string | null;
+  subcontractorId?: string | null;
+  assignee?: { id: string; name: string } | null;
+  subcontractor?: { id: string; name: string } | null;
+  events: Array<{
+    id: string;
+    type: string;
+    note: string | null;
+    createdAt: string;
+    actor?: { name: string } | null;
+  }>;
+  evidence: Array<{
+    id: string;
+    title: string;
+    type: string;
+    filePath: string | null;
+    chatText: string | null;
+  }>;
+  tasks: Array<{ id: string; title: string; status: string; instructions: string | null }>;
+  project: { name: string; siteCode: string };
+};
+
+export default function CaseDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const [item, setItem] = useState<CaseDetail | null>(null);
+  const [subs, setSubs] = useState<Array<{ id: string; name: string }>>([]);
+  const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
+  const [tab, setTab] = useState<"details" | "progress" | "files" | "logs">("details");
+  const [assign, setAssign] = useState({
+    subcontractorId: "",
+    assigneeId: "",
+    dueAt: "",
+    instructions: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function load() {
+    const [cRes, sRes] = await Promise.all([
+      apiFetch<CaseDetail>(`/api/cases/${id}`),
+      apiFetch<{ subcontractors?: Array<{ id: string; name: string }>; users?: Array<{ id: string; name: string }> }>(
+        "/api/settings",
+      ),
+    ]);
+    if (!cRes.ok || !cRes.data || typeof cRes.data !== "object" || !("id" in cRes.data)) {
+      setItem(null);
+      setMsg(cRes.ok ? "找不到事件" : cRes.error);
+      return;
+    }
+    const c = cRes.data;
+    setItem(c);
+    setSubs(sRes.ok ? asArray(sRes.data?.subcontractors) : []);
+    setUsers(sRes.ok ? asArray(sRes.data?.users) : []);
+    setAssign((a) => ({
+      ...a,
+      subcontractorId: c.subcontractorId || c.subcontractor?.id || "",
+      assigneeId: c.assigneeId || c.assignee?.id || "",
+      instructions: c.recommendation || "",
+      dueAt: c.dueAt ? c.dueAt.slice(0, 10) : "",
+    }));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function patch(body: Record<string, unknown>) {
+    setBusy(true);
+    setMsg("");
+    const res = await fetch(`/api/cases/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setMsg("操作失敗");
+      return;
+    }
+    setMsg("已更新");
+    await load();
+    router.refresh();
+  }
+
+  async function downloadArchive() {
+    const res = await fetch(`/api/cases/${id}/archive`);
+    const data = await res.json();
+    if (data.filePath) window.open(data.filePath, "_blank");
+  }
+
+  if (!item) {
+    return (
+      <div className="space-y-3 py-10 text-center">
+        <p className="text-sm text-slate-500">{msg || "載入中…"}</p>
+        {msg && (
+          <Link href="/cases" className="axon-btn axon-btn-ghost inline-flex">
+            返回事件列表
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  const remain = daysRemaining(item.dueAt);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="text-xs text-slate-400">{item.caseNo}</div>
+          <h1 className="text-2xl font-semibold text-[var(--axon-navy)]">{item.title}</h1>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <span className={cn("rounded px-2 py-0.5", CATEGORY_COLORS[item.category])}>
+              {CATEGORY_LABELS[item.category]}
+            </span>
+            <span className={cn("rounded-full px-2 py-0.5", STATUS_COLORS[item.status])}>
+              {CASE_STATUS_LABELS[item.status]}
+            </span>
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
+              嚴重度：{SEVERITY_LABELS[item.severity]}
+            </span>
+            {remain !== null && (
+              <span className={cn("rounded px-2 py-0.5", remain < 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700")}>
+                剩餘 {remain} 天
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={downloadArchive}
+          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
+        >
+          下載全部證據
+        </button>
+      </div>
+
+      <div className="flex gap-2 border-b border-slate-200">
+        {(
+          [
+            ["details", "詳情"],
+            ["progress", "進度"],
+            ["files", "附件"],
+            ["logs", "日誌"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={cn(
+              "border-b-2 px-4 py-2 text-sm",
+              tab === k
+                ? "border-[var(--axon-blue)] text-[var(--axon-blue)]"
+                : "border-transparent text-slate-500"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "details" && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold">事件資訊</h2>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between gap-4"><dt className="text-slate-500">位置</dt><dd>{item.location}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-500">發現時間</dt><dd>{formatDate(item.discoveredAt)}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-500">負責人</dt><dd>{item.assignee?.name || "—"}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-500">分判</dt><dd>{item.subcontractor?.name || "—"}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-slate-500">項目</dt><dd>{item.project.name}</dd></div>
+            </dl>
+            <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
+            {item.recommendation && (
+              <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+                建議：{item.recommendation}
+              </p>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold">指派分判</h2>
+            <div className="space-y-3">
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={assign.subcontractorId}
+                onChange={(e) => setAssign({ ...assign, subcontractorId: e.target.value })}
+              >
+                <option value="">選擇分判商</option>
+                {subs.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <select
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={assign.assigneeId}
+                onChange={(e) => setAssign({ ...assign, assigneeId: e.target.value })}
+              >
+                <option value="">選擇負責人</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={assign.dueAt}
+                onChange={(e) => setAssign({ ...assign, dueAt: e.target.value })}
+              />
+              <textarea
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                rows={3}
+                placeholder="整改指示"
+                value={assign.instructions}
+                onChange={(e) => setAssign({ ...assign, instructions: e.target.value })}
+              />
+              <button
+                disabled={busy}
+                onClick={() =>
+                  patch({
+                    status: "ASSIGNED",
+                    eventType: "ASSIGN",
+                    eventNote: `已發送指示給分判`,
+                    subcontractorId: assign.subcontractorId || null,
+                    assigneeId: assign.assigneeId || null,
+                    dueAt: assign.dueAt || null,
+                    instructions: assign.instructions,
+                  })
+                }
+                className="w-full rounded-lg bg-[var(--axon-blue)] py-2 text-sm text-white disabled:opacity-50"
+              >
+                發送指示 / 指派
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+            <h2 className="mb-3 text-sm font-semibold">快捷操作</h2>
+            <div className="flex flex-wrap gap-2">
+              <button
+                disabled={busy}
+                onClick={() =>
+                  patch({ status: "IN_PROGRESS", eventType: "PROGRESS", eventNote: "開始整改" })
+                }
+                className="rounded-lg border px-3 py-2 text-sm"
+              >
+                標記進行中
+              </button>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  patch({
+                    status: "PENDING_REVIEW",
+                    eventType: "REVIEW",
+                    eventNote: "提交核驗",
+                  })
+                }
+                className="rounded-lg border px-3 py-2 text-sm"
+              >
+                提交核驗
+              </button>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  patch({
+                    status: "CLOSED",
+                    eventType: "CLOSE",
+                    eventNote: "核驗通過，事件關閉",
+                  })
+                }
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white"
+              >
+                核驗通過並關閉
+              </button>
+            </div>
+            {msg && <p className="mt-2 text-sm text-emerald-600">{msg}</p>}
+          </section>
+        </div>
+      )}
+
+      {tab === "progress" && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <Timeline events={item.events} />
+        </section>
+      )}
+
+      {tab === "files" && (
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {item.evidence.map((e) => (
+            <div key={e.id} className="rounded-xl border border-slate-200 bg-white p-3">
+              {mediaUrl(e.filePath) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mediaUrl(e.filePath)!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
+              ) : (
+                <div className="mb-2 flex h-36 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">
+                  {e.type}
+                </div>
+              )}
+              <div className="text-sm font-medium">{e.title}</div>
+              {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
+            </div>
+          ))}
+          {item.evidence.length === 0 && (
+            <p className="text-sm text-slate-400">尚無附件</p>
+          )}
+        </section>
+      )}
+
+      {tab === "logs" && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold">任務</h2>
+          <ul className="mb-6 space-y-2">
+            {item.tasks.map((t) => (
+              <li key={t.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                {t.title}
+                <span className="ml-2 text-xs text-slate-400">{t.status}</span>
+              </li>
+            ))}
+          </ul>
+          <Timeline events={item.events} />
+        </section>
+      )}
+    </div>
+  );
+}

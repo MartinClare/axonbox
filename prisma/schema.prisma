@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("SUPERVISOR")
+  phone        String?
+  title        String?
+  company      String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedCases  Case[]          @relation("CaseAssignee")
+  assignedTasks  Task[]          @relation("TaskAssignee")
+  caseEvents     CaseEvent[]
+  subcontractors Subcontractor[] @relation("SubUser")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  siteCode  String
+  address   String?
+  weather   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cases          Case[]
+  evidence       Evidence[]
+  dailyReports   DailyReport[]
+  subcontractors Subcontractor[]
+  inboxMessages  InboxMessage[]
+}
+
+model Subcontractor {
+  id        String   @id @default(cuid())
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  trade     String?
+  address   String?
+  licenseNo String?
+  notes     String?
+  projectId String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id])
+  user    User?    @relation("SubUser", fields: [userId], references: [id])
+  cases   Case[]
+}
+
+model Case {
+  id              String    @id @default(cuid())
+  caseNo          String    @unique
+  title           String
+  description     String
+  category        String
+  severity        String
+  location        String
+  status          String    @default("OPEN")
+  recommendation  String?
+  sourceType      String    @default("PHOTO")
+  discoveredAt    DateTime  @default(now())
+  dueAt           DateTime?
+  closedAt        DateTime?
+  projectId       String
+  assigneeId      String?
+  subcontractorId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project       Project        @relation(fields: [projectId], references: [id])
+  assignee      User?          @relation("CaseAssignee", fields: [assigneeId], references: [id])
+  subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id])
+  tasks         Task[]
+  events        CaseEvent[]
+  evidence      Evidence[]
+  inboxMessages InboxMessage[]
+}
+
+model Task {
+  id           String    @id @default(cuid())
+  title        String
+  instructions String?
+  status       String    @default("PENDING")
+  dueAt        DateTime?
+  caseId       String
+  assigneeId   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  case     Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignee User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+}
+
+model CaseEvent {
+  id        String   @id @default(cuid())
+  caseId    String
+  type      String
+  note      String?
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  case  Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id])
+}
+
+model Evidence {
+  id         String    @id @default(cuid())
+  type       String
+  title      String
+  location   String?
+  filePath   String?
+  mime       String?
+  exifJson   String?
+  aiJson     String?
+  chatText   String?
+  status     String    @default("PENDING")
+  source     String    @default("UPLOAD")
+  category   String?
+  severity   String?
+  capturedAt DateTime  @default(now())
+  caseId     String?
+  projectId  String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  case    Case?   @relation(fields: [caseId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+  inboxMessage InboxMessage?
+}
+
+model InboxMessage {
+  id          String    @id @default(cuid())
+  channel     String
+  externalId  String?
+  sender      String
+  subject     String?
+  body        String
+  rawPayload  String?
+  attachments String    @default("[]")
+  status      String    @default("PENDING")
+  aiJson      String?
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  projectId   String
+  evidenceId  String?   @unique
+  caseId      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id])
+  evidence Evidence? @relation(fields: [evidenceId], references: [id])
+  case     Case?     @relation(fields: [caseId], references: [id])
+
+  @@index([status, receivedAt])
+  @@index([channel])
+}
+
+model DailyReport {
+  id                 String   @id @default(cuid())
+  projectId          String
+  date               DateTime
+  weather            String?
+  workerCount        Int      @default(0)
+  subcontractorCount Int      @default(0)
+  equipmentCount     Int      @default(0)
+  materialDeliveries Int      @default(0)
+  progressPct        Int      @default(0)
+  safetyEvents       Int      @default(0)
+  activitiesJson     String   @default("[]")
+  tomorrowPlanJson   String   @default("[]")
+  issuesJson         String   @default("[]")
+  photoPathsJson     String   @default("[]")
+  status             String   @default("DRAFT")
+  reporterName       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  project Project        @relation(fields: [projectId], references: [id])
+  exports ReportExport[]
+
+  @@unique([projectId, date])
+}
+
+model ReportExport {
+  id            String   @id @default(cuid())
+  dailyReportId String?
+  format        String
+  filePath      String
+  title         String?
+  createdAt     DateTime @default(now())
+
+  dailyReport DailyReport? @relation(fields: [dailyReportId], references: [id])
+}
+
+// Site inspection checklist template (incl. HYD / XPMS oriented)
+model ChecklistTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   @default("SITE")
+  description String?
+  sourceRef   String?
+  itemsJson   String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  runs ChecklistRun[]
+}
+
+model ChecklistRun {
+  id           String    @id @default(cuid())
+  templateId   String
+  projectId    String
+  title        String
+  status       String    @default("IN_PROGRESS")
+  itemsJson    String    @default("[]")
+  note         String?
+  createdById  String?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id])
+}
+
+// Enterprise org settings for commercial RBAC
+model OrgSettings {
+  id               String   @id @default(cuid())
+  name             String   @default("AxonBox Demo Org")
+  plan             String   @default("ENTERPRISE")
+  allowSubInvite   Boolean  @default(true)
+  requireApproval  Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

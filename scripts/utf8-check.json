@@ -1,0 +1,24 @@
+{
+  "title": "AXON Case | 工地行政 AI 平台",
+  "loginOk": true,
+  "homeOk": true,
+  "sample": [
+    {
+      "caseNo": "C-2024-0610-015",
+      "title": "防水層漏做",
+      "location": "B區4樓洗手間"
+    },
+    {
+      "caseNo": "C-2024-0610-012",
+      "title": "瓷磚空鼓抽檢",
+      "location": "辦公樓3樓走廊"
+    },
+    {
+      "caseNo": "C-2024-0610-003",
+      "title": "洞口未封閉",
+      "location": "C區 - 2樓"
+    }
+  ],
+  "mojibakeCount": 0,
+  "total": 16
+}
