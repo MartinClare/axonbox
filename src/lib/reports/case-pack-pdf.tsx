@@ -14,6 +14,7 @@ import {
   CASE_STATUS_LABELS,
   SEVERITY_LABELS,
 } from "@/lib/labels";
+import { ensurePdfFonts, PDF_FONT_FAMILY } from "@/lib/reports/pdf-fonts";
 
 export type CasePackPayload = {
   caseNo: string;
@@ -38,9 +39,9 @@ export type CasePackPayload = {
 };
 
 const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 10, color: "#0f172a", fontFamily: "Helvetica" },
-  h1: { fontSize: 16, marginBottom: 6, color: "#0c2340" },
-  h2: { fontSize: 12, marginTop: 14, marginBottom: 6, color: "#163a5f" },
+  page: { padding: 36, fontSize: 10, color: "#0f172a", fontFamily: PDF_FONT_FAMILY },
+  h1: { fontSize: 16, marginBottom: 6, color: "#0c2340", fontFamily: PDF_FONT_FAMILY, fontWeight: 700 },
+  h2: { fontSize: 12, marginTop: 14, marginBottom: 6, color: "#163a5f", fontFamily: PDF_FONT_FAMILY, fontWeight: 700 },
   meta: { color: "#64748b", marginBottom: 3 },
   p: { lineHeight: 1.45, marginBottom: 4 },
   row: { flexDirection: "row", marginBottom: 3 },
@@ -142,6 +143,7 @@ function CasePackDoc({ payload }: { payload: CasePackPayload }) {
 }
 
 export async function buildCasePackPdf(payload: CasePackPayload): Promise<Buffer> {
+  ensurePdfFonts();
   const element = React.createElement(CasePackDoc, {
     payload,
   }) as unknown as ReactElement<DocumentProps>;

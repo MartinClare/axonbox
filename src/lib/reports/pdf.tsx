@@ -10,11 +10,12 @@ import {
 } from "@react-pdf/renderer";
 import type { DailyReportPayload, EventReportPayload } from "./types";
 import { CATEGORY_LABELS, CASE_STATUS_LABELS, SEVERITY_LABELS } from "@/lib/labels";
+import { ensurePdfFonts, PDF_FONT_FAMILY } from "@/lib/reports/pdf-fonts";
 
 const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 10, color: "#0f172a", fontFamily: "Helvetica" },
-  h1: { fontSize: 18, marginBottom: 6, color: "#0c2340" },
-  h2: { fontSize: 12, marginTop: 14, marginBottom: 6, color: "#163a5f" },
+  page: { padding: 36, fontSize: 10, color: "#0f172a", fontFamily: PDF_FONT_FAMILY },
+  h1: { fontSize: 18, marginBottom: 6, color: "#0c2340", fontFamily: PDF_FONT_FAMILY, fontWeight: 700 },
+  h2: { fontSize: 12, marginTop: 14, marginBottom: 6, color: "#163a5f", fontFamily: PDF_FONT_FAMILY, fontWeight: 700 },
   meta: { color: "#64748b", marginBottom: 4 },
   boxRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
   box: {
@@ -28,7 +29,7 @@ const styles = StyleSheet.create({
   },
   table: { marginTop: 4 },
   tr: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
-  th: { flex: 1, fontSize: 9, fontWeight: 700, paddingVertical: 4, paddingRight: 4 },
+  th: { flex: 1, fontSize: 9, fontFamily: PDF_FONT_FAMILY, fontWeight: 700, paddingVertical: 4, paddingRight: 4 },
   td: { flex: 1, fontSize: 9, paddingVertical: 4, paddingRight: 4 },
   p: { lineHeight: 1.45, marginBottom: 4 },
   foot: { marginTop: 18, fontSize: 8, color: "#94a3b8" },
@@ -174,6 +175,7 @@ function EventDoc({ payload }: { payload: EventReportPayload }) {
 }
 
 export async function buildDailyPdf(payload: DailyReportPayload): Promise<Buffer> {
+  ensurePdfFonts();
   const element = React.createElement(DailyDoc, {
     payload,
   }) as unknown as ReactElement<DocumentProps>;
@@ -182,6 +184,7 @@ export async function buildDailyPdf(payload: DailyReportPayload): Promise<Buffer
 }
 
 export async function buildEventPdf(payload: EventReportPayload): Promise<Buffer> {
+  ensurePdfFonts();
   const element = React.createElement(EventDoc, {
     payload,
   }) as unknown as ReactElement<DocumentProps>;
