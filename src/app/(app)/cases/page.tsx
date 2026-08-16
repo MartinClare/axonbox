@@ -10,6 +10,8 @@ import {
   formatDate,
   daysRemaining,
 } from "@/lib/labels";
+import { CASE_LOOP_SUBTITLE, getCaseLoopState } from "@/lib/case-loop";
+import { CaseLoopStepper } from "@/components/CaseLoopStepper";
 import Link from "next/link";
 
 export default async function CasesPage({
@@ -45,7 +47,12 @@ export default async function CasesPage({
       ],
     },
     orderBy: { discoveredAt: "desc" },
-    include: { subcontractor: true, assignee: true, evidence: { take: 1 } },
+    include: {
+      subcontractor: true,
+      assignee: true,
+      evidence: { select: { id: true, createdAt: true, tagsJson: true } },
+      events: { select: { type: true, createdAt: true } },
+    },
   });
 
   return (
@@ -53,7 +60,7 @@ export default async function CasesPage({
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="axon-title text-2xl font-semibold">事件管理</h1>
-          <p className="text-sm axon-muted">建立 → 指派 → 跟進 → 核驗關閉</p>
+          <p className="text-sm axon-muted">{CASE_LOOP_SUBTITLE}</p>
         </div>
         <Link href="/capture" className="axon-btn axon-btn-primary">
           ＋ 新增事件
@@ -98,6 +105,7 @@ export default async function CasesPage({
           <thead className="bg-slate-50 text-xs text-slate-500">
             <tr>
               <th className="px-4 py-3">事件</th>
+              <th className="px-4 py-3">迴圈</th>
               <th className="px-4 py-3">分類</th>
               <th className="px-4 py-3">嚴重度</th>
               <th className="px-4 py-3">位置</th>
@@ -111,6 +119,14 @@ export default async function CasesPage({
             {cases.map((c) => {
               const remain = daysRemaining(c.dueAt);
               const overdue = c.status !== "CLOSED" && remain !== null && remain < 0;
+              const loop = getCaseLoopState({
+                status: c.status,
+                assigneeId: c.assigneeId,
+                subcontractorId: c.subcontractorId,
+                evidence: c.evidence,
+                events: c.events,
+              });
+              const currentLabel = loop.steps.find((s) => s.current)?.label || "結案";
               return (
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-3">
@@ -118,6 +134,12 @@ export default async function CasesPage({
                       {c.title}
                     </Link>
                     <div className="text-xs text-slate-400">{c.caseNo}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <CaseLoopStepper steps={loop.steps} compact />
+                    <div className="mt-1 text-[10px] text-slate-400">
+                      {c.status === "CLOSED" ? "已完成" : currentLabel}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn("rounded px-2 py-0.5 text-xs", CATEGORY_COLORS[c.category])}>

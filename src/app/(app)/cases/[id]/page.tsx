@@ -17,6 +17,12 @@ import {
 import { mediaUrl } from "@/lib/media";
 import { apiFetch, asArray } from "@/lib/api-client";
 import { hasAfterEvidence, parseEvidenceTags, tagsIncludeAfter } from "@/lib/case-closeout";
+import {
+  CASE_LOOP_SUBTITLE,
+  getCaseLoopState,
+  type CaseLoopNextAction,
+} from "@/lib/case-loop";
+import { CaseLoopNextPanel, CaseLoopStepper } from "@/components/CaseLoopStepper";
 
 type CaseDetail = {
   id: string;
@@ -313,6 +319,41 @@ export default function CaseDetailPage() {
     ),
   );
 
+  const loop = getCaseLoopState({
+    status: item.status,
+    assigneeId: item.assigneeId || item.assignee?.id,
+    subcontractorId: item.subcontractorId || item.subcontractor?.id,
+    evidence: item.evidence.map((e) => ({
+      id: e.id,
+      createdAt: e.createdAt || item.discoveredAt,
+      tagsJson: e.tagsJson,
+    })),
+    events: item.events,
+  });
+
+  function handleLoopAction(action: CaseLoopNextAction) {
+    if (action === "assign") {
+      setTab("details");
+      setTimeout(() => {
+        document.getElementById("case-loop-assign")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+      return;
+    }
+    if (action === "after_proof") {
+      setTab("files");
+      setMsg("請在附件標記「整改後」照片");
+      return;
+    }
+    if (action === "close") {
+      setTab("details");
+      void tryClose();
+      return;
+    }
+    if (action === "pack") {
+      void downloadPack();
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -416,6 +457,17 @@ export default function CaseDetailPage() {
             刪除事件
           </button>
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--axon-navy)]">監督迴圈</h2>
+            <p className="text-xs text-slate-500">{CASE_LOOP_SUBTITLE}</p>
+          </div>
+        </div>
+        <CaseLoopStepper steps={loop.steps} />
+        <CaseLoopNextPanel action={loop.nextAction} busy={busy} onAction={handleLoopAction} />
       </div>
 
       <div className="flex gap-2 border-b border-slate-200">
@@ -604,8 +656,8 @@ export default function CaseDetailPage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold">指派分判</h2>
+          <section id="case-loop-assign" className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold">步驟 2：指派分判</h2>
             <div className="space-y-3">
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -664,8 +716,11 @@ export default function CaseDetailPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-            <h2 className="mb-3 text-sm font-semibold">快捷操作</h2>
+          <section id="case-loop-close" className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
+            <h2 className="mb-3 text-sm font-semibold">步驟 4：核驗結案</h2>
+            <p className="mb-3 text-xs text-slate-500">
+              步驟 3 請到「附件」標記整改後證據；完成後即可核驗關閉。
+            </p>
             <div className="flex flex-wrap gap-2">
               <button
                 disabled={busy}
@@ -761,7 +816,16 @@ export default function CaseDetailPage() {
       )}
 
       {tab === "files" && (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="space-y-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <h2 className="text-sm font-semibold">步驟 3：整改後證據</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {afterReady
+                ? "已有整改後證據，可進行核驗結案。"
+                : "請將整改完成後的照片標記為「整改後」，才可關閉事件。"}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {item.evidence.map((e) => {
             const href = mediaUrl(e.filePath);
             const image = Boolean(e.mime?.startsWith("image/") && href);
@@ -809,6 +873,7 @@ export default function CaseDetailPage() {
             );
           })}
           {item.evidence.length === 0 && <p className="text-sm text-slate-400">尚無附件</p>}
+          </div>
         </section>
       )}
 
