@@ -10,6 +10,8 @@ import {
   type DirectoryUser,
 } from "@/lib/minutes";
 
+export const maxDuration = 120;
+
 const meetingInclude = {
   tasks: {
     where: { archived: false },
@@ -35,6 +37,54 @@ function parseDue(v?: string | null) {
   return new Date(s.length === 10 ? `${s}T12:00:00` : s);
 }
 
+async function buildPreview(buf: Buffer, fileName: string, mime: string) {
+  if (buf.length > MINUTES_MAX_BYTES) {
+    return NextResponse.json(
+      { error: `檔案過大（上限 ${Math.floor(MINUTES_MAX_BYTES / 1_000_000)}MB）` },
+      { status: 400 },
+    );
+  }
+  const meta = { name: fileName, mime };
+  if (!isMinutesFile(meta)) {
+    return NextResponse.json({ error: "請上傳 PDF、Word 或文字檔" }, { status: 400 });
+  }
+  const rawText = await extractMinutesText(buf, meta);
+  if (!rawText.trim()) {
+    return NextResponse.json(
+      { error: "無法讀取檔案內容（舊版 .doc 請轉成 .docx 或 PDF）" },
+      { status: 400 },
+    );
+  }
+
+  const extracted = await extractMeetingActions(rawText);
+  const users = (await prisma.user.findMany({
+    select: { id: true, name: true, email: true, company: true },
+  })) as DirectoryUser[];
+
+  const actions = extracted.actions.map((a) => {
+    const matched = matchAssigneeByName(a.assigneeName, users);
+    return {
+      title: a.title,
+      assigneeName: a.assigneeName,
+      assigneeId: matched?.id || null,
+      matchedName: matched?.name || null,
+      dueAt: a.dueAt,
+      notes: a.notes,
+    };
+  });
+
+  return NextResponse.json({
+    preview: true,
+    title: extracted.title,
+    meetingAt: extracted.meetingAt,
+    sourceName: fileName,
+    rawText,
+    actions,
+    mock: extracted.mock,
+    model: extracted.model || null,
+  });
+}
+
 export async function GET() {
   const { error } = await requireSession();
   if (error) return error;
@@ -57,12 +107,49 @@ export async function POST(req: NextRequest) {
 
   const contentType = req.headers.get("content-type") || "";
 
-  // Prefer JSON upload (avoids Next.js FormData crash on CJK filenames)
+  // Multipart upload — avoids base64 JSON hitting ~10MB body limits
+  if (contentType.includes("multipart/form-data")) {
+    try {
+      const form = await req.formData();
+      const file = form.get("file");
+      if (!(file instanceof File) || file.size <= 0) {
+        return NextResponse.json({ error: "file required" }, { status: 400 });
+      }
+      const fileName =
+        String(form.get("fileName") || "").trim() || file.name || "minutes.bin";
+      const mime = String(form.get("mime") || file.type || "");
+      const buf = Buffer.from(await file.arrayBuffer());
+      return await buildPreview(buf, fileName, mime);
+    } catch (e) {
+      console.error("[meetings.POST multipart]", e);
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "upload failed" },
+        { status: 500 },
+      );
+    }
+  }
+
   if (contentType.includes("application/json")) {
     try {
-      const body = await req.json();
+      const raw = await req.text();
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(raw) as Record<string, unknown>;
+      } catch (parseErr) {
+        const msg = parseErr instanceof Error ? parseErr.message : "";
+        if (/Unterminated string|Unexpected end/i.test(msg)) {
+          return NextResponse.json(
+            {
+              error:
+                "檔案太大，JSON 上傳被截斷。請改用較小檔案（建議 8MB 以下），或重新整理後再試。",
+            },
+            { status: 413 },
+          );
+        }
+        throw parseErr;
+      }
 
-      // Step 1: base64 file → preview
+      // Legacy base64 preview (small files only)
       if (body.preview === true || body.fileBase64) {
         const fileName = String(body.fileName || body.name || "minutes.txt");
         const mime = String(body.mime || body.contentType || "");
@@ -73,56 +160,12 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "fileBase64 required" }, { status: 400 });
         }
         const buf = Buffer.from(b64, "base64");
-        if (buf.length > MINUTES_MAX_BYTES) {
-          return NextResponse.json({ error: "file too large" }, { status: 400 });
-        }
-        const meta = { name: fileName, mime };
-        if (!isMinutesFile(meta)) {
-          return NextResponse.json(
-            { error: "請上傳 PDF、Word 或文字檔" },
-            { status: 400 },
-          );
-        }
-        const rawText = await extractMinutesText(buf, meta);
-        if (!rawText.trim()) {
-          return NextResponse.json(
-            { error: "無法讀取檔案內容（舊版 .doc 請轉成 .docx 或 PDF）" },
-            { status: 400 },
-          );
-        }
-
-        const extracted = await extractMeetingActions(rawText);
-        const users = (await prisma.user.findMany({
-          select: { id: true, name: true, email: true, company: true },
-        })) as DirectoryUser[];
-
-        const actions = extracted.actions.map((a) => {
-          const matched = matchAssigneeByName(a.assigneeName, users);
-          return {
-            title: a.title,
-            assigneeName: a.assigneeName,
-            assigneeId: matched?.id || null,
-            matchedName: matched?.name || null,
-            dueAt: a.dueAt,
-            notes: a.notes,
-          };
-        });
-
-        return NextResponse.json({
-          preview: true,
-          title: extracted.title,
-          meetingAt: extracted.meetingAt,
-          sourceName: fileName,
-          rawText,
-          actions,
-          mock: extracted.mock,
-          model: extracted.model || null,
-        });
+        return await buildPreview(buf, fileName, mime);
       }
 
-      // Step 2: confirm → create meeting + tasks
+      // Confirm → create meeting + tasks
       if (!body.confirm) {
-        return NextResponse.json({ error: "confirm or fileBase64 required" }, { status: 400 });
+        return NextResponse.json({ error: "confirm or file required" }, { status: 400 });
       }
 
       const title = String(body.title || "").trim() || "會議行動項目";
@@ -198,7 +241,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json(
-    { error: "請以 JSON 上傳（fileBase64）或 confirm" },
+    { error: "請以 multipart 上傳檔案，或以 JSON confirm" },
     { status: 400 },
   );
 }

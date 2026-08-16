@@ -3,7 +3,8 @@ import { extractText } from "unpdf";
 import { extOf } from "@/lib/inbound-files";
 
 export const MINUTES_MAX_CHARS = 20_000;
-export const MINUTES_MAX_BYTES = 12_000_000;
+/** Binary upload cap (multipart). Keep under common ~10–16MB proxy limits. */
+export const MINUTES_MAX_BYTES = 10_000_000;
 
 export function isMinutesFile(file: { mime?: string; name?: string }) {
   const mime = (file.mime || "").toLowerCase();
