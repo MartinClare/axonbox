@@ -91,6 +91,21 @@ function EvidencePageInner() {
     setItems((prev) => prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)));
   }
 
+  function removeItem(id: string) {
+    setItems((prev) => {
+      const removedAt = prev.findIndex((it) => it.id === id);
+      const next = prev.filter((it) => it.id !== id);
+      setLightboxIndex((idx) => {
+        if (idx == null || removedAt < 0) return idx;
+        if (next.length === 0) return null;
+        if (removedAt < idx) return idx - 1;
+        return Math.min(removedAt, next.length - 1);
+      });
+      return next;
+    });
+    setTotal((n) => Math.max(0, n - 1));
+  }
+
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
@@ -177,6 +192,7 @@ function EvidencePageInner() {
           onClose={() => setLightboxIndex(null)}
           onIndexChange={setLightboxIndex}
           onItemPatched={patchItem}
+          onItemDeleted={removeItem}
         />
       )}
     </div>

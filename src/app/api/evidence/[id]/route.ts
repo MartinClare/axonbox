@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { ensureAfterTag, parseEvidenceTags } from "@/lib/case-closeout";
+import { saveUpload } from "@/lib/upload";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+const evidenceInclude = {
+  case: {
+    select: { id: true, caseNo: true, status: true, title: true },
+  },
+} as const;
 
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const { error } = await requireSession();
@@ -29,15 +36,37 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (error) return error;
   const { id } = await ctx.params;
 
+  const existing = await prisma.evidence.findUnique({ where: { id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const ct = req.headers.get("content-type") || "";
+
+  // Replace photo / file via multipart
+  if (ct.includes("multipart/form-data")) {
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    }
+    const saved = await saveUpload(file, "evidence");
+    const updated = await prisma.evidence.update({
+      where: { id },
+      data: {
+        filePath: saved.filePath,
+        mime: saved.mime,
+        type: saved.mime.startsWith("image/") ? "PHOTO" : existing.type,
+      },
+      include: evidenceInclude,
+    });
+    return NextResponse.json(updated);
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-
-  const existing = await prisma.evidence.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: { tagsJson?: string; title?: string; caseId?: string | null } = {};
 
@@ -70,11 +99,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const updated = await prisma.evidence.update({
     where: { id },
     data,
-    include: {
-      case: {
-        select: { id: true, caseNo: true, status: true, title: true },
-      },
-    },
+    include: evidenceInclude,
   });
   return NextResponse.json(updated);
 }
