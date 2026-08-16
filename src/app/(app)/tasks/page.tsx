@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import { STATUS_COLORS, TASK_STATUS_LABELS, cn, daysRemaining, formatDay } from "@/lib/labels";
 import { apiFetch, asArray } from "@/lib/api-client";
+import { type MinutesProgress, uploadMinutesPreview } from "@/lib/file-base64";
+import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 import {
   COLUMN_THEME,
   TASK_COLUMNS,
@@ -310,6 +312,7 @@ export default function TasksPage() {
   const [draftCaseId, setDraftCaseId] = useState("");
   const [preview, setPreview] = useState<MinutesPreview | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<MinutesProgress | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [menuMeetingId, setMenuMeetingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -488,39 +491,24 @@ export default function TasksPage() {
     if (!file) return;
     setUploading(true);
     setError("");
+    setUploadProgress({ pct: 4, label: "開始處理…" });
     try {
-      const { fileToBase64 } = await import("@/lib/file-base64");
-      const fileBase64 = await fileToBase64(file);
-      const res = await apiFetch<MinutesPreview>("/api/meetings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          preview: true,
-          fileName: file.name,
-          mime: file.type || "",
-          fileBase64,
-        }),
-      });
-      setUploading(false);
-      if (!res.ok) {
-        setError(res.error || "上傳失敗");
-        return;
-      }
-      if (!res.data) {
-        setError("上傳失敗");
-        return;
-      }
+      const data = await uploadMinutesPreview(file, setUploadProgress);
+      setUploadProgress({ pct: 100, label: "完成" });
+      await new Promise((r) => setTimeout(r, 280));
       setPreview({
-        title: res.data.title,
-        meetingAt: res.data.meetingAt,
-        sourceName: res.data.sourceName,
-        rawText: res.data.rawText,
-        actions: res.data.actions || [],
-        mock: res.data.mock,
+        title: data.title,
+        meetingAt: data.meetingAt,
+        sourceName: data.sourceName,
+        rawText: data.rawText,
+        actions: data.actions || [],
+        mock: data.mock,
       });
     } catch (err) {
-      setUploading(false);
       setError(err instanceof Error ? err.message : "上傳失敗");
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -597,7 +585,7 @@ export default function TasksPage() {
             className="axon-btn axon-btn-primary min-h-9 px-3 text-sm"
           >
             <FileUp size={14} />
-            {uploading ? "分析中…" : "上傳會議紀錄"}
+            {uploading ? "處理中…" : "上傳會議紀錄"}
           </button>
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" />
@@ -919,6 +907,8 @@ export default function TasksPage() {
       {open && (
         <CardModal task={open} users={users} onClose={() => setOpen(null)} onSave={saveTask} />
       )}
+
+      {uploadProgress && <MinutesProgressOverlay progress={uploadProgress} />}
 
       {preview && (
         <MinutesPreviewModal

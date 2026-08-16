@@ -27,6 +27,8 @@ import {
   cn,
 } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
+import { type MinutesProgress, uploadMinutesPreview } from "@/lib/file-base64";
+import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 
 type InboxRow = {
   id: string;
@@ -96,6 +98,7 @@ export default function InboxPage() {
   const [minutesPreview, setMinutesPreview] = useState<MinutesPreview | null>(null);
   const [minutesUsers, setMinutesUsers] = useState<UserOpt[]>([]);
   const [confirmingMinutes, setConfirmingMinutes] = useState(false);
+  const [minutesProgress, setMinutesProgress] = useState<MinutesProgress | null>(null);
   const [inbound, setInbound] = useState<{
     address: string | null;
     domain?: string | null;
@@ -355,43 +358,28 @@ export default function InboxPage() {
   async function onPickMinutes(file: File | null) {
     if (!file) return;
     setBusy(true);
+    setMinutesProgress({ pct: 4, label: "開始處理…" });
     try {
-      const { fileToBase64 } = await import("@/lib/file-base64");
-      const fileBase64 = await fileToBase64(file);
-      const [uploadRes, settingsRes] = await Promise.all([
-        apiFetch<MinutesPreview>("/api/meetings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            preview: true,
-            fileName: file.name,
-            mime: file.type || "",
-            fileBase64,
-          }),
-        }),
+      const [data, settingsRes] = await Promise.all([
+        uploadMinutesPreview(file, setMinutesProgress),
         apiFetch<{ users?: UserOpt[] }>("/api/settings"),
       ]);
-      setBusy(false);
-      if (!uploadRes.ok) {
-        flash(uploadRes.error || "會議紀錄上傳失敗");
-        return;
-      }
-      if (!uploadRes.data) {
-        flash("會議紀錄上傳失敗");
-        return;
-      }
+      setMinutesProgress({ pct: 100, label: "完成" });
+      await new Promise((r) => setTimeout(r, 280));
       if (settingsRes.ok) setMinutesUsers(settingsRes.data?.users || []);
       setMinutesPreview({
-        title: uploadRes.data.title,
-        meetingAt: uploadRes.data.meetingAt,
-        sourceName: uploadRes.data.sourceName,
-        rawText: uploadRes.data.rawText,
-        actions: uploadRes.data.actions || [],
-        mock: uploadRes.data.mock,
+        title: data.title,
+        meetingAt: data.meetingAt,
+        sourceName: data.sourceName,
+        rawText: data.rawText,
+        actions: data.actions || [],
+        mock: data.mock,
       });
     } catch (err) {
-      setBusy(false);
       flash(err instanceof Error ? err.message : "會議紀錄上傳失敗");
+    } finally {
+      setBusy(false);
+      setMinutesProgress(null);
     }
   }
 
@@ -537,8 +525,8 @@ export default function InboxPage() {
                     className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-purple-800 transition hover:bg-white"
                     title="上傳會議紀錄，行動項目會放到任務看板的獨立列表"
                   >
-                    {busy ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />}
-                    會議紀錄
+                    <FileUp size={14} />
+                    {busy && minutesProgress ? "處理中…" : "會議紀錄"}
                   </button>
                 </div>
 
@@ -796,6 +784,8 @@ export default function InboxPage() {
           )}
         </section>
       </div>
+
+      {minutesProgress && <MinutesProgressOverlay progress={minutesProgress} />}
 
       {minutesPreview && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-10">
