@@ -114,12 +114,13 @@ AxonBox is a website, not a store app. Open it in the browser, bookmark it, or i
 
 ![Fig 3.2 Overview after sign-in](/help-media/fig-03-2-overview.png)
 
-### 3.3 Switch English / 繁中
+### 3.3 Switch English / 繁中 and appearance
 
 1. In the left sidebar, under **Setup**, click **Settings**.
 2. Find **Interface language**.
 3. Click **English** or **繁體中文**.
 4. The menu and buttons change immediately. Case *titles you typed* stay as they are.
+5. Under **Appearance**, choose **Light** (white background), **Dark**, or **System**. You can also tap the moon / sun icon in the sidebar (or on the login screen).
 
 ![Fig 3.3 Settings language](/help-media/fig-16-2-language.png)
 
@@ -167,7 +168,7 @@ Use this chapter as the map. Every later chapter is a room on this map. You do n
 
 | Menu | What it is for |
 |---|---|
-| **Evidence** | Photo library |
+| **Evidence** | Photo library — create / link Case, replace, delete |
 | **Daily reports** | One day’s rollup |
 | **Reports** | Word / PDF packs |
 | **Ask engineering** | Q&A with sources |
@@ -177,7 +178,7 @@ Use this chapter as the map. Every later chapter is a room on this map. You do n
 | Menu | What it is for |
 |---|---|
 | **People & companies** | Users, forward address, subcontractors |
-| **Settings** | Project, language, AI |
+| **Settings** | Project, language, appearance, AI |
 | **Install app** | PWA |
 | **How to open** | Share URL |
 | **Help** | This manual |
@@ -433,7 +434,7 @@ Run a **Checklist** when you are inspecting against a template. **Pass** logs a 
 
 ## 11. Evidence
 
-**Evidence** is the photo gallery behind Cases — browse, filter, and zoom like a photo library. Each thumb can show evidence status and a linked Case (with Case status). One Case can hold many photos: open a photo, **Link to Case**, and repeat for more shots of the same issue. Use this when you need to find or attach photos later — Capture and Inbox already put files here when you save them.
+**Evidence** is the photo gallery behind Cases — browse and filter like a photo library, then **act** on a photo: create or open a Case, link more shots to the same issue, replace a wrong file, download, or delete. Capture and Inbox already put files here when you save them; use Evidence when you need to find a photo later or turn an unlinked photo into work.
 
 ### 11.1 Bring photos in
 
@@ -450,13 +451,23 @@ Run a **Checklist** when you are inspecting against a template. **Pass** logs a 
 2. Click **Filter**.
 3. Browse the dense photo grid. Badges on each thumb show evidence status and, if linked, the Case number and Case status.
 
-### 11.3 Zoom and Case link
+### 11.3 Open a photo and use the action bar
 
 1. Click a thumbnail to open the fullscreen viewer.
 2. Zoom with the buttons, mouse wheel, or double-click; drag when zoomed. Use arrow keys or on-screen arrows for prev / next. Esc closes.
-3. In the side panel, check metadata, AI, and the Case strip.
-4. **Link to Case** — search by case number or title and pick a Case. **Unlink** removes the connection. Link several photos to the same Case when one issue has many shots.
-5. Open the Case from the Case number link, or from a Case’s **Files** tab use **Open in Evidence**.
+3. Use the **action bar** under the title (always visible):
+
+| Action | When to use it |
+|---|---|
+| **Create Case** | Photo is not linked and someone must fix the issue — opens a Case and takes you there (same idea as Capture). |
+| **Open Case** | Photo is already linked — jump to assign, after-proof, and close. |
+| **Link to Case** | Attach this shot to an existing Case (one Case can hold many photos). Search by case number or title. |
+| **Unlink** | Remove the Case connection without deleting the photo. |
+| **Replace photo** | Swap the file (wrong shot, clearer after photo) while keeping the same evidence record and Case link. |
+| **Download** | Save the file to your device. |
+| **Delete** | Remove the evidence permanently (confirm first). |
+
+4. The side panel still shows metadata, AI notes, and Case status. From a Case’s **Files** tab you can also use **Open in Evidence**.
 
 ![Fig 11.3 Evidence detail](/help-media/fig-11-3-detail.png)
 
@@ -554,7 +565,7 @@ Owner → Admin → Supervisor → Viewer / Subcontractor. Managing people needs
 
 ## 16. Settings
 
-**Settings** holds project identity and interface language. Set the project name and site code so reports and packs read correctly; use language so the UI matches this tutorial.
+**Settings** holds project identity, interface language, and appearance. Set the project name and site code so reports and packs read correctly; use language and theme so the UI matches how you work.
 
 ### 16.1 Project
 
@@ -564,10 +575,11 @@ Owner → Admin → Supervisor → Viewer / Subcontractor. Managing people needs
 
 ![Fig 16.1 Settings](/help-media/fig-16-1-settings.png)
 
-### 16.2 Language and AI status
+### 16.2 Language, appearance, and AI status
 
 1. **Interface language** — see 3.3.
-2. **AI status** shows Connected or Not configured (Mock). Mock still lets you walk the screens.
+2. **Appearance** — **Light** (white), **Dark**, or **System**. The sidebar moon / sun icon toggles light and dark quickly.
+3. **AI status** shows Connected or Not configured (Mock). Mock still lets you walk the screens.
 
 ---
 
@@ -593,6 +605,8 @@ You are not collecting a second pile of photos. You are feeding **Cases**.
 
 On **Cases**, assign an owner and due date while the issue is still fresh. When remediation is done, upload or find the after photo, **Mark as after proof**, then **Verify & close**. Download the close-out pack when someone needs a handover file.
 
+If a photo landed in **Evidence** without a Case, open it and use **Create Case** (or **Link to Case** if the issue already exists). Use **Replace photo** when the after shot should overwrite a wrong file on the same record.
+
 If a meeting produced actions, put those on **Tasks** (upload minutes if you have a PDF). Keep meeting actions on the board; keep site defects on Cases.
 
 ### 17.4 End of day and week
@@ -612,11 +626,12 @@ That is the full loop: capture once → chase in Cases → prove after → roll 
 - Prefer **JPG/PNG**. HEIC may not preview.
 - Close is blocked until **Mark as after proof**, unless you **Close without photos** with a reason.
 
-### 18.2 Login and language
+### 18.2 Login, language, and appearance
 
 - Session expired: sign in again.
 - Menu still Chinese: **Settings** → **English**, then refresh.
 - Titles and AI text stay in the language they were saved.
+- Screen too bright / too dark: **Settings** → **Appearance**, or the moon / sun icon in the sidebar.
 
 ---
 
