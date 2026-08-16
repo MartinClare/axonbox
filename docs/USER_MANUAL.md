@@ -2,7 +2,7 @@
 
 English UI. Desktop web. Demo login: `admin@axon.demo` / `demo1234`.
 
-This guide matches the **live app**. The AXONCASE pitch explains *why*; the steps below are *what you click*.
+This is a **tutorial** for the live app. Read chapters 1–2 for the working picture, chapter 4 for how the screens fit together, then open each screen chapter when you need the clicks. Chapter 17 walks a normal day end to end.
 
 ---
 
@@ -87,9 +87,13 @@ The pitch shows the same journey as seven steps: chat/photo/voice → AI extract
 | Reporting | Reports |
 | (not in the pitch) | Tasks, meeting minutes, Checklist, Ask engineering |
 
+In practice: one photo or a forwarded chat becomes a **Case** — that Case is the file you chase. Overview, Daily reports, and Reports show the PM what happened without rebuilding an Excel pack from chat and albums. Chapter 4 spells out which door to use when.
+
 ---
 
 ## 3. Open the web app
+
+AxonBox is a website, not a store app. Open it in the browser, bookmark it, or install it to the Home Screen if you work from a phone. Switch the interface to English first so the rest of this tutorial matches the buttons you see.
 
 ### 3.1 Open the URL
 
@@ -146,6 +150,8 @@ This manual uses **English** labels.
 
 ## 4. Screen map
 
+Use this chapter as the map. Every later chapter is a room on this map. You do not need every screen every day — you need the right door for the situation.
+
 ### 4.1 Daily work
 
 | Menu | What it is for |
@@ -178,7 +184,17 @@ This manual uses **English** labels.
 
 ### 4.4 Typical path through the app
 
-Capture or Inbox → **Cases** → Assign → mark after proof → Close → Daily reports / Overview.
+Three doors put work into AxonBox. Pick the one that matches how the issue arrived:
+
+- **Site capture** when you are at the work face and can take the photo yourself.
+- **Inbox** when the issue already arrived as email or WhatsApp — forward or paste it; do not re-photograph a chat.
+- **Checklist Fail** when an inspection finds a defect and you want a Case opened from that fail.
+
+All three feed **Cases**. Cases are the spine of the day: an owner, a due date, an after photo when the work is done, then a close-out pack. That is how a scattered photo or message becomes a file you can chase and hand over.
+
+**Tasks** are different. Use them for meeting actions and follow-ups from minutes — not as a second Case list. Approving an Inbox item can create both a Case (the site issue) and a Task (the follow-up reminder).
+
+**Evidence**, **Daily reports**, and **Reports** sit after the loop. Evidence is the photo library behind the Cases. Daily reports and Reports roll the day or the period into something you can paste or send — so you are not hunting the camera roll and rebuilding Excel at night.
 
 ```
 Capture / Inbox / Checklist Fail
@@ -187,9 +203,13 @@ Capture / Inbox / Checklist Fail
         → Overview + Daily reports + Reports
 ```
 
+When you are unsure which screen to open, come back here. Chapter 17 shows the same path as a normal working day.
+
 ---
 
 ## 5. Overview
+
+Open **Overview** first thing, or whenever the PM asks “what is open / what is overdue?” It is the morning glance: open safety and overdue Cases first, then click through instead of asking the group chat.
 
 ### 5.1 KPI cards and alerts
 
@@ -218,6 +238,8 @@ Capture / Inbox / Checklist Fail
 ---
 
 ## 6. Site capture
+
+Use **Site capture** when you are looking at the work. Choose **Log status** for a progress record, or **Find issues** when you want the AI to look for a defect. Save to evidence if you only need the photo on file; create a Case if someone must fix it.
 
 ### 6.1 Photo, message, or voice
 
@@ -252,6 +274,8 @@ Capture / Inbox / Checklist Fail
 ---
 
 ## 7. Inbox
+
+**Inbox** is the same destination as Site capture, through a different door. Use it when the issue already arrived as email or WhatsApp. **Approve** means “this is a real Case”; **Dismiss** means noise you do not want to chase.
 
 ### 7.1 Forward address and WhatsApp inbox
 
@@ -294,6 +318,8 @@ Capture / Inbox / Checklist Fail
 ---
 
 ## 8. Cases
+
+**Cases** is the file you chase. Open it after Capture, Inbox, or Checklist Fail. The after-proof step exists so close-out is photo evidence, not a verbal “already fixed.” Assign the same day when you can — that is what keeps the Overview clean.
 
 ### 8.1 List, filters, overdue, loop
 
@@ -352,6 +378,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 
 ## 9. Tasks
 
+**Tasks** are meeting follow-ups and action items — not a second Case list. Use the board for day-to-day chasing; upload minutes so actions do not die inside a PDF.
+
 ### 9.1 Board and list
 
 1. Sidebar → **Tasks**.
@@ -380,6 +408,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 
 ## 10. Checklist
 
+Run a **Checklist** when you are inspecting against a template. **Pass** logs a clean run. **Fail** is the shortcut into the same Case loop as Capture and Inbox — then continue in Chapter 8.
+
 ### 10.1 Run a template
 
 1. Sidebar → **Checklist**.
@@ -402,6 +432,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 ---
 
 ## 11. Evidence
+
+**Evidence** is the photo library behind Cases. Use it when you need to find a photo later, attach context, or show what was on file — not to run the day’s chase. Capture and Inbox already put files here when you save them.
 
 ### 11.1 Bring photos in
 
@@ -428,6 +460,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 
 ## 12. Daily reports
 
+**Daily reports** is the end-of-day rollup. The opened / closed / overdue numbers come from the Cases you already worked — you fill weather, manpower, and notes, then copy or export instead of writing the diary from scratch.
+
 ### 12.1 Day numbers and notes
 
 1. Sidebar → **Daily reports**.
@@ -451,6 +485,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 
 ## 13. Reports
 
+**Reports** builds a period pack (day, week, month, safety, quality, and so on) from the same Case and evidence trail. Generate when the owner or client needs a document — you are not retyping the week into Word.
+
 ### 13.1 Choose type and date
 
 1. Sidebar → **Reports**.
@@ -469,6 +505,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 
 ## 14. Ask engineering
 
+**Ask engineering** is side help for site practice questions (for example HyD / XPMS style answers with sources). It is not part of the Case loop — use Capture, Inbox, and Cases for issues you must chase.
+
 ### 14.1 Knowledge page
 
 1. Sidebar → **Ask engineering**.
@@ -486,6 +524,8 @@ You can also click **Mark in progress** or **Submit for review** under **Step 4*
 ---
 
 ## 15. People and companies
+
+Set up **People & companies** before you rely on assign or Inbox forwarding. Names and subcontractors must exist so Case assign has someone to choose; the forward address is the Inbox mailbox from Chapter 7.
 
 ### 15.1 People and forward address
 
@@ -510,6 +550,8 @@ Owner → Admin → Supervisor → Viewer / Subcontractor. Managing people needs
 
 ## 16. Settings
 
+**Settings** holds project identity and interface language. Set the project name and site code so reports and packs read correctly; use language so the UI matches this tutorial.
+
 ### 16.1 Project
 
 1. Sidebar → **Settings**.
@@ -527,17 +569,35 @@ Owner → Admin → Supervisor → Viewer / Subcontractor. Managing people needs
 
 ## 17. A normal day
 
-### 17.1 On site
+This chapter is the tutorial put in order. Use the screen chapters above when you need the exact clicks.
 
-Morning: **Site capture** and **Inbox**; run **Checklist** if you are inspecting.
+### 17.1 Morning glance
 
-### 17.2 Close-out
+Start on **Overview**. Read open safety and overdue Cases. Click a card if something needs attention today. That replaces asking the WhatsApp group “what is still open?”
 
-Assign Cases the same day. Before close: after photos → **Verify & close** → close-out pack.
+### 17.2 Bring work in
 
-### 17.3 End of day and week
+Through the morning, use the door that matches the situation:
 
-End of day: **Daily reports** copy or PDF. End of week: **Overview** digest and **Reports** for the owner.
+- At the work face → **Site capture** (log status or find issues).
+- Issue already in email or chat → **Inbox** (forward, paste, or fetch; approve real ones, dismiss noise).
+- Formal inspection → **Checklist**; Fail opens a Case for you.
+
+You are not collecting a second pile of photos. You are feeding **Cases**.
+
+### 17.3 Chase and close the same day
+
+On **Cases**, assign an owner and due date while the issue is still fresh. When remediation is done, upload or find the after photo, **Mark as after proof**, then **Verify & close**. Download the close-out pack when someone needs a handover file.
+
+If a meeting produced actions, put those on **Tasks** (upload minutes if you have a PDF). Keep meeting actions on the board; keep site defects on Cases.
+
+### 17.4 End of day and week
+
+At the end of the day, open **Daily reports**. The counts and issues are already there from the Cases you closed and left open — fill weather and notes, then copy to WhatsApp or export Word/PDF instead of writing the diary from memory.
+
+At the end of the week, **Copy weekly digest** on Overview for a quick owner update, or generate a period pack under **Reports**. The pack is the trail of Cases and evidence you already kept — not a weekend rebuild from chat and albums.
+
+That is the full loop: capture once → chase in Cases → prove after → roll up. Chapter 4 is the map if you get lost; Chapters 5–16 are the rooms.
 
 ---
 
