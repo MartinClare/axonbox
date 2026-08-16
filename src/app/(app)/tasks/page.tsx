@@ -23,10 +23,13 @@ import {
   Calendar,
   CheckSquare,
   FileUp,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Plus,
   Search,
   Trash2,
+  UserPlus,
   UserRound,
   X,
 } from "lucide-react";
@@ -961,6 +964,7 @@ export default function TasksPage() {
           onChange={setPreview}
           onClose={() => setPreview(null)}
           onConfirm={confirmMinutes}
+          onUserCreated={(u) => setUsers((prev) => (prev.some((x) => x.id === u.id) ? prev : [...prev, u]))}
         />
       )}
 
@@ -1030,6 +1034,7 @@ function MinutesPreviewModal({
   onChange,
   onClose,
   onConfirm,
+  onUserCreated,
 }: {
   preview: MinutesPreview;
   users: UserOpt[];
@@ -1037,10 +1042,17 @@ function MinutesPreviewModal({
   onChange: (p: MinutesPreview) => void;
   onClose: () => void;
   onConfirm: () => void;
+  onUserCreated: (u: UserOpt) => void;
 }) {
   const [lang, setLang] = useState<MinutesOutputLang>(preview.outputLang || "original");
   const [reapplying, setReapplying] = useState(false);
   const [reapplyError, setReapplyError] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [creatingIdx, setCreatingIdx] = useState<number | null>(null);
+  const [createName, setCreateName] = useState("");
+  const [createEmail, setCreateEmail] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState("");
 
   useEffect(() => {
     setLang(preview.outputLang || "original");
@@ -1049,6 +1061,75 @@ function MinutesPreviewModal({
   function updateAction(idx: number, patch: Partial<PreviewAction>) {
     const actions = preview.actions.map((a, i) => (i === idx ? { ...a, ...patch } : a));
     onChange({ ...preview, actions });
+  }
+
+  function openCreatePerson(idx: number) {
+    const a = preview.actions[idx];
+    setCreatingIdx(idx);
+    setCreateName((a?.assigneeName || "").trim());
+    setCreateEmail("");
+    setCreateError("");
+  }
+
+  function closeCreatePerson() {
+    setCreatingIdx(null);
+    setCreateName("");
+    setCreateEmail("");
+    setCreateError("");
+  }
+
+  async function submitCreatePerson() {
+    const name = createName.trim();
+    const email = createEmail.trim().toLowerCase();
+    if (!name || !email) {
+      setCreateError("請填寫姓名與電郵");
+      return;
+    }
+    setCreateBusy(true);
+    setCreateError("");
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, role: "SUPERVISOR" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        name?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        if (res.status === 409 || data.error === "email already exists") {
+          setCreateError("電郵已存在");
+        } else if (res.status === 403) {
+          setCreateError("無權限新增人員");
+        } else {
+          setCreateError(data.error || "新增失敗");
+        }
+        return;
+      }
+      if (!data.id || !data.name) {
+        setCreateError("新增失敗");
+        return;
+      }
+      const user: UserOpt = { id: data.id, name: data.name };
+      onUserCreated(user);
+      const key = name.toLowerCase();
+      onChange({
+        ...preview,
+        actions: preview.actions.map((a) => {
+          if (a.assigneeId) return a;
+          if ((a.assigneeName || "").trim().toLowerCase() !== key) return a;
+          return { ...a, assigneeId: user.id, assigneeName: user.name, matchedName: user.name };
+        }),
+      });
+      closeCreatePerson();
+    } catch {
+      setCreateError("網路錯誤，請稍後再試");
+    } finally {
+      setCreateBusy(false);
+    }
   }
 
   async function applyLanguage() {
@@ -1080,9 +1161,21 @@ function MinutesPreviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-10">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex justify-center bg-black/45 p-3",
+        expanded ? "items-stretch" : "items-end sm:items-start sm:pt-10",
+      )}
+    >
+      <div
+        className={cn(
+          "flex w-full flex-col overflow-hidden rounded-2xl bg-white p-5 shadow-2xl",
+          expanded
+            ? "h-[calc(100vh-1.5rem)] max-h-[calc(100vh-1.5rem)] max-w-[min(100%,72rem)]"
+            : "max-h-[90vh] max-w-3xl",
+        )}
+      >
+        <div className="mb-4 flex shrink-0 items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-[var(--axon-ink)]">分析會議紀錄</h2>
             <p className="mt-1 text-xs text-slate-500">
@@ -1091,106 +1184,194 @@ function MinutesPreviewModal({
               。確認行動項目後會在看板右側新增一個會議列表。
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-500">輸出語言</span>
-          <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
-          <button
-            type="button"
-            disabled={reapplying || confirming || lang === (preview.outputLang || "original")}
-            onClick={applyLanguage}
-            className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
-          >
-            {reapplying ? "套用中…" : "套用"}
-          </button>
-          {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
-        </div>
-
-        <div className="mb-4 grid gap-2 sm:grid-cols-2">
-          <label className="text-xs text-slate-500">
-            列表名稱
-            <input
-              className="axon-input mt-1 min-h-0 py-2 text-sm"
-              value={preview.title}
-              onChange={(e) => onChange({ ...preview, title: e.target.value })}
-            />
-          </label>
-          <label className="text-xs text-slate-500">
-            會議日期
-            <input
-              type="date"
-              className="axon-input mt-1 min-h-0 py-2 text-sm"
-              value={preview.meetingAt || ""}
-              onChange={(e) => onChange({ ...preview, meetingAt: e.target.value || null })}
-            />
-          </label>
-        </div>
-
-        <div className="space-y-2">
-          {preview.actions.map((a, idx) => (
-            <div
-              key={idx}
-              className="grid gap-2 rounded-xl border border-[var(--axon-line)] bg-slate-50/80 p-3 sm:grid-cols-[1fr_140px_120px_auto]"
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              title={expanded ? "還原視窗" : "放大視窗"}
             >
+              {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500">輸出語言</span>
+            <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
+            <button
+              type="button"
+              disabled={reapplying || confirming || lang === (preview.outputLang || "original")}
+              onClick={applyLanguage}
+              className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
+            >
+              {reapplying ? "套用中…" : "套用"}
+            </button>
+            {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
+          </div>
+
+          <div className="mb-4 grid gap-2 sm:grid-cols-2">
+            <label className="text-xs text-slate-500">
+              列表名稱
               <input
-                className="axon-input min-h-0 py-2 text-sm"
-                value={a.title}
-                onChange={(e) => updateAction(idx, { title: e.target.value })}
-                placeholder="行動項目"
+                className="axon-input mt-1 min-h-0 py-2 text-sm"
+                value={preview.title}
+                onChange={(e) => onChange({ ...preview, title: e.target.value })}
               />
-              <select
-                className="axon-input min-h-0 py-2 text-xs"
-                value={a.assigneeId || ""}
-                onChange={(e) =>
-                  updateAction(idx, {
-                    assigneeId: e.target.value || null,
-                    assigneeName: users.find((u) => u.id === e.target.value)?.name || a.assigneeName,
-                  })
-                }
-              >
-                <option value="">{a.assigneeName ? `未對應：${a.assigneeName}` : "未指派"}</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+            </label>
+            <label className="text-xs text-slate-500">
+              會議日期
               <input
                 type="date"
-                className="axon-input min-h-0 py-2 text-xs"
-                value={a.dueAt || ""}
-                onChange={(e) => updateAction(idx, { dueAt: e.target.value || null })}
+                className="axon-input mt-1 min-h-0 py-2 text-sm"
+                value={preview.meetingAt || ""}
+                onChange={(e) => onChange({ ...preview, meetingAt: e.target.value || null })}
               />
-              <button
-                type="button"
-                className="rounded-lg px-2 text-rose-600 hover:bg-rose-50"
-                onClick={() =>
-                  onChange({
-                    ...preview,
-                    actions: preview.actions.filter((_, i) => i !== idx),
-                  })
-                }
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-          {preview.actions.length === 0 && (
-            <p className="py-6 text-center text-sm text-slate-400">沒有行動項目</p>
-          )}
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            {preview.actions.map((a, idx) => {
+              const unmatched = Boolean(a.assigneeName?.trim() && !a.assigneeId);
+              return (
+                <div
+                  key={idx}
+                  className="space-y-2 rounded-xl border border-[var(--axon-line)] bg-slate-50/80 p-3"
+                >
+                  <textarea
+                    className="axon-input min-h-[4.5rem] resize-y py-2 text-sm"
+                    rows={3}
+                    value={a.title}
+                    onChange={(e) => updateAction(idx, { title: e.target.value })}
+                    placeholder="行動項目"
+                  />
+                  <textarea
+                    className="axon-input min-h-[3rem] resize-y py-2 text-xs text-slate-600"
+                    rows={2}
+                    value={a.notes || ""}
+                    onChange={(e) => updateAction(idx, { notes: e.target.value || null })}
+                    placeholder="備註（可選）"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="axon-input min-h-0 min-w-[9rem] flex-1 py-2 text-xs sm:max-w-[180px]"
+                      value={a.assigneeId || ""}
+                      onChange={(e) =>
+                        updateAction(idx, {
+                          assigneeId: e.target.value || null,
+                          assigneeName:
+                            users.find((u) => u.id === e.target.value)?.name || a.assigneeName,
+                        })
+                      }
+                    >
+                      <option value="">
+                        {a.assigneeName ? `未對應：${a.assigneeName}` : "未指派"}
+                      </option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      className="axon-input min-h-0 w-[140px] py-2 text-xs"
+                      value={a.dueAt || ""}
+                      onChange={(e) => updateAction(idx, { dueAt: e.target.value || null })}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-lg px-2 py-2 text-rose-600 hover:bg-rose-50"
+                      onClick={() => {
+                        if (creatingIdx === idx) closeCreatePerson();
+                        onChange({
+                          ...preview,
+                          actions: preview.actions.filter((_, i) => i !== idx),
+                        });
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  {unmatched && creatingIdx !== idx && (
+                    <button
+                      type="button"
+                      disabled={confirming || createBusy}
+                      onClick={() => openCreatePerson(idx)}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--axon-blue)] hover:bg-sky-50"
+                    >
+                      <UserPlus size={13} />
+                      新增「{a.assigneeName}」
+                    </button>
+                  )}
+                  {creatingIdx === idx && (
+                    <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+                      <div className="mb-2 text-xs font-medium text-slate-600">新增人員到通訊錄</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="text-[11px] text-slate-500">
+                          姓名
+                          <input
+                            className="axon-input mt-1 min-h-0 py-1.5 text-sm"
+                            value={createName}
+                            onChange={(e) => setCreateName(e.target.value)}
+                            disabled={createBusy}
+                          />
+                        </label>
+                        <label className="text-[11px] text-slate-500">
+                          電郵
+                          <input
+                            type="email"
+                            className="axon-input mt-1 min-h-0 py-1.5 text-sm"
+                            value={createEmail}
+                            onChange={(e) => setCreateEmail(e.target.value)}
+                            placeholder="required@example.com"
+                            disabled={createBusy}
+                          />
+                        </label>
+                      </div>
+                      {createError && (
+                        <p className="mt-2 text-xs text-rose-600">{createError}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={createBusy}
+                          onClick={submitCreatePerson}
+                          className="axon-btn axon-btn-primary min-h-8 px-3 text-xs"
+                        >
+                          {createBusy ? "建立中…" : "建立並指派"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={createBusy}
+                          onClick={closeCreatePerson}
+                          className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {preview.actions.length === 0 && (
+              <p className="py-6 text-center text-sm text-slate-400">沒有行動項目</p>
+            )}
+          </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--axon-line)] pt-4">
           <button type="button" onClick={onClose} className="axon-btn axon-btn-ghost min-h-9 px-4 text-sm">
             取消
           </button>
           <button
             type="button"
-            disabled={confirming || reapplying || preview.actions.length === 0}
+            disabled={confirming || reapplying || createBusy || preview.actions.length === 0}
             onClick={onConfirm}
             className="axon-btn axon-btn-primary min-h-9 px-4 text-sm"
           >
