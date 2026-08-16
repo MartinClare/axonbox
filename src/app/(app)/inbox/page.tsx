@@ -330,12 +330,6 @@ export default function InboxPage() {
     flash(t("inbox.copiedEmail"));
   }
 
-  async function copyWhatsAppNumber() {
-    if (!inbound?.whatsappNumber) return;
-    await navigator.clipboard.writeText(inbound.whatsappNumber);
-    flash(t("inbox.copiedWa"));
-  }
-
   async function syncMail() {
     setBusy(true);
     const res = await fetch("/api/connectors/email/sync", { method: "POST" });
@@ -429,31 +423,23 @@ export default function InboxPage() {
         )}
       </section>
 
-      {inbound?.whatsappConfigured && (
-        <section className="axon-panel space-y-3 p-5">
-          <div>
-            <div className="text-sm font-semibold text-[var(--axon-ink)]">{t("inbox.waTitle")}</div>
-            <p className="mt-1 text-xs text-slate-500">
-              {t("inbox.waHint")}
-            </p>
-          </div>
-          {inbound.whatsappNumber ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--axon-ink)]">
-                {inbound.whatsappNumber}
-              </code>
-              <button type="button" onClick={copyWhatsAppNumber} className="axon-btn axon-btn-ghost">
-                <Copy size={14} />
-                {t("common.copy")}
-              </button>
-            </div>
-          ) : (
-            <p className="text-sm text-amber-700">
-              {t("inbox.waNumberMissing")}
-            </p>
-          )}
-        </section>
-      )}
+      <section className="axon-panel space-y-3 p-5">
+        <div>
+          <div className="text-sm font-semibold text-[var(--axon-ink)]">{t("inbox.waTitle")}</div>
+          <p className="mt-1 text-xs text-slate-500">
+            {t("inbox.waHint")}
+          </p>
+        </div>
+        <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-[var(--axon-ink)]">
+          {t("inbox.waAskCs")}
+        </p>
+        <p className="text-xs text-slate-500">
+          {t("inbox.waCsContact")}{" "}
+          <a className="text-[var(--axon-blue)] hover:underline" href="mailto:info@axon.com.hk">
+            info@axon.com.hk
+          </a>
+        </p>
+      </section>
 
       <div className="flex flex-wrap gap-1.5">
         {filters.map(([label, n, key]) => (

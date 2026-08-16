@@ -101,7 +101,8 @@ export async function GET(req: NextRequest) {
       resendConfigured: inboundResendConfigured(),
       webhookPath: "/api/connectors/email/webhook",
       whatsappConfigured: Boolean(process.env.YCLOUD_API_KEY?.trim()),
-      whatsappNumber: process.env.WHATSAPP_DISPLAY_NUMBER?.trim() || null,
+      // Never expose the intake number in the UI — ask customer service.
+      whatsappNumber: null as string | null,
       whatsappWebhookPath: "/api/connectors/whatsapp/webhook",
     },
   });

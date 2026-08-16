@@ -283,7 +283,7 @@ Use **Site capture** when you are looking at the work. Choose **Log status** for
 1. Sidebar → **Inbox**.
 2. Under **Your forward address**, click copy (or **Copy to email To**).
 3. Put that address in the To field when you forward site mail.
-4. If **Site WhatsApp inbox** shows a number, save it on the phone and forward chats there.
+4. **Site WhatsApp inbox** does not show the number in the app — ask customer service for it, then save it on the phone and forward chats there.
 
 ![Fig 7.1 Inbox](/help-media/fig-07-1-inbox.png)
 
