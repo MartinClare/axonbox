@@ -1,19 +1,12 @@
-/** Browser helper: File → base64 (no data: prefix). */
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || "");
-      const i = dataUrl.indexOf("base64,");
-      resolve(i >= 0 ? dataUrl.slice(i + 7) : dataUrl);
-    };
-    reader.onerror = () => reject(reader.error || new Error("read failed"));
-    reader.readAsDataURL(file);
+/** Encode a UTF-8 filename for X-File-Name header (base64). */
+function encodeFileNameHeader(name: string) {
+  const bytes = new TextEncoder().encode(name);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
   });
+  return btoa(binary);
 }
-
-/** Keep in sync with `MINUTES_MAX_BYTES` in src/lib/minutes.ts */
-const MINUTES_UPLOAD_MAX_BYTES = 10_000_000;
 
 export type MinutesPreviewPayload = {
   title: string;
@@ -39,6 +32,9 @@ export type MinutesProgress = {
 
 export const MINUTES_PREVIEW_STORAGE_KEY = "axonbox:minutesPreview";
 
+/** Keep in sync with `MINUTES_MAX_BYTES` in src/lib/minutes.ts */
+const MINUTES_UPLOAD_MAX_BYTES = 10_000_000;
+
 /** Stash AI minutes analysis so Inbox can jump to /tasks analysis UI. */
 export function stashMinutesPreview(payload: MinutesPreviewPayload) {
   try {
@@ -59,16 +55,9 @@ export function takeMinutesPreview(): MinutesPreviewPayload | null {
   }
 }
 
-/** ASCII-safe multipart filename; real CJK name goes in a separate form field. */
-function safeUploadName(file: File) {
-  const m = file.name.toLowerCase().match(/\.([a-z0-9]+)$/);
-  const ext = m?.[1] || "bin";
-  return `minutes.${ext}`;
-}
-
 /**
- * Upload minutes as multipart FormData (not JSON base64) so large PDFs
- * do not hit ~10MB JSON body truncation. CJK names travel in `fileName`.
+ * Upload minutes as raw binary to /api/meetings/preview.
+ * Avoids JSON base64 inflation that hit ~10MB proxy truncation.
  */
 export function uploadMinutesPreview(
   file: File,
@@ -78,7 +67,7 @@ export function uploadMinutesPreview(
     if (file.size > MINUTES_UPLOAD_MAX_BYTES) {
       reject(
         new Error(
-          `檔案過大（${(file.size / 1_000_000).toFixed(1)}MB）。請壓縮至 ${Math.floor(MINUTES_UPLOAD_MAX_BYTES / 1_000_000)}MB 以下，或轉成文字／較小 PDF。`,
+          `檔案過大（${(file.size / 1_000_000).toFixed(1)}MB）。請壓縮至 ${Math.floor(MINUTES_UPLOAD_MAX_BYTES / 1_000_000)}MB 以下，或先轉成文字檔再上傳。`,
         ),
       );
       return;
@@ -92,15 +81,13 @@ export function uploadMinutesPreview(
 
     onProgress({ pct: 8, label: "準備上傳…" });
 
-    const form = new FormData();
-    form.append("file", file, safeUploadName(file));
-    form.append("fileName", file.name);
-    form.append("mime", file.type || "");
-    form.append("preview", "1");
-
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/meetings");
+    // New path forces clients off the old JSON /api/meetings upload
+    xhr.open("POST", "/api/meetings/preview");
     xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("X-File-Name", encodeFileNameHeader(file.name));
+    xhr.setRequestHeader("X-File-Mime", file.type || "application/octet-stream");
 
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable || e.total <= 0) return;
@@ -134,6 +121,10 @@ export function uploadMinutesPreview(
         reject(new Error("未授權，請重新登入"));
         return;
       }
+      if (xhr.status === 404) {
+        reject(new Error("請強制重新整理頁面後再試（Cmd+Shift+R / Ctrl+Shift+R）"));
+        return;
+      }
       if (xhr.status < 200 || xhr.status >= 300) {
         const err =
           data && typeof data === "object" && data !== null && "error" in data
@@ -146,6 +137,6 @@ export function uploadMinutesPreview(
       resolve(data as MinutesPreviewPayload);
     };
 
-    xhr.send(form);
+    xhr.send(file);
   });
 }

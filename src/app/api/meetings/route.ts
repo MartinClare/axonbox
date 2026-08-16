@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(
             {
               error:
-                "檔案太大，JSON 上傳被截斷。請改用較小檔案（建議 8MB 以下），或重新整理後再試。",
+                "上傳方式已更新。請強制重新整理頁面（Cmd+Shift+R / Ctrl+Shift+R）後再試；檔案請保持 10MB 以下。",
             },
             { status: 413 },
           );
@@ -149,23 +149,54 @@ export async function POST(req: NextRequest) {
         throw parseErr;
       }
 
-      // Legacy base64 preview (small files only)
-      if (body.preview === true || body.fileBase64) {
+      // Old base64 clients — force refresh onto binary /api/meetings/preview
+      if (body.fileBase64 || (body.preview === true && !body.confirm && !body.rawText)) {
+        return NextResponse.json(
+          {
+            error:
+              "上傳方式已更新。請強制重新整理頁面（Cmd+Shift+R / Ctrl+Shift+R）後再上傳會議紀錄。",
+          },
+          { status: 409 },
+        );
+      }
+
+      // Optional: text-only preview (tiny payload)
+      if (body.preview === true && typeof body.rawText === "string") {
         const fileName = String(body.fileName || body.name || "minutes.txt");
-        const mime = String(body.mime || body.contentType || "");
-        const b64 = String(body.fileBase64 || "")
-          .replace(/^data:[^;]+;base64,/, "")
-          .trim();
-        if (!b64) {
-          return NextResponse.json({ error: "fileBase64 required" }, { status: 400 });
+        const rawText = String(body.rawText);
+        if (!rawText.trim()) {
+          return NextResponse.json({ error: "內容為空" }, { status: 400 });
         }
-        const buf = Buffer.from(b64, "base64");
-        return await buildPreview(buf, fileName, mime);
+        const extracted = await extractMeetingActions(rawText);
+        const users = (await prisma.user.findMany({
+          select: { id: true, name: true, email: true, company: true },
+        })) as DirectoryUser[];
+        const actions = extracted.actions.map((a) => {
+          const matched = matchAssigneeByName(a.assigneeName, users);
+          return {
+            title: a.title,
+            assigneeName: a.assigneeName,
+            assigneeId: matched?.id || null,
+            matchedName: matched?.name || null,
+            dueAt: a.dueAt,
+            notes: a.notes,
+          };
+        });
+        return NextResponse.json({
+          preview: true,
+          title: extracted.title,
+          meetingAt: extracted.meetingAt,
+          sourceName: fileName,
+          rawText: rawText.slice(0, 20_000),
+          actions,
+          mock: extracted.mock,
+          model: extracted.model || null,
+        });
       }
 
       // Confirm → create meeting + tasks
       if (!body.confirm) {
-        return NextResponse.json({ error: "confirm or file required" }, { status: 400 });
+        return NextResponse.json({ error: "confirm required" }, { status: 400 });
       }
 
       const title = String(body.title || "").trim() || "會議行動項目";
