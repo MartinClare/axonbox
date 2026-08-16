@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { CheckSquare, Loader2, Play } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/labels";
@@ -28,8 +29,10 @@ export default function ChecklistPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [active, setActive] = useState<Run | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await apiFetch<{ templates: Template[]; runs: Run[] }>("/api/checklist");
@@ -47,6 +50,7 @@ export default function ChecklistPage() {
 
   async function start(templateId: string) {
     setBusy(true);
+    setCreatedCaseId(null);
     const res = await apiFetch<Run>("/api/checklist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -59,6 +63,7 @@ export default function ChecklistPage() {
     }
     setActive(res.data!);
     setItems(JSON.parse(res.data!.itemsJson || "[]"));
+    setNote("");
     await load();
   }
 
@@ -72,6 +77,7 @@ export default function ChecklistPage() {
         action: "save",
         id: active.id,
         items,
+        note,
         complete,
       }),
     });
@@ -85,14 +91,59 @@ export default function ChecklistPage() {
     await load();
   }
 
+  async function inspectResult(result: "PASS" | "FAIL") {
+    if (!active) return;
+    setBusy(true);
+    setCreatedCaseId(null);
+    const res = await apiFetch<{
+      run: Run;
+      case?: { id: string; caseNo: string } | null;
+      error?: string;
+    }>("/api/checklist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "inspectResult",
+        id: active.id,
+        items,
+        note,
+        result,
+      }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(res.error);
+      return;
+    }
+    setActive(res.data!.run);
+    if (result === "PASS") {
+      setMsg("已判定通過，並留下點檢紀錄");
+    } else if (res.data?.case?.id) {
+      setCreatedCaseId(res.data.case.id);
+      setMsg(`不合格：已建立事件 ${res.data.case.caseNo}`);
+    } else {
+      setMsg("已判定不合格");
+    }
+    await load();
+  }
+
   const doneCount = items.filter((i) => i.checked).length;
+  const finished =
+    active && ["DONE", "PASSED", "FAILED"].includes(active.status);
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="axon-title text-2xl font-semibold">現場 Checklist</h1>
-        <p className="mt-1 text-sm axon-muted">安全／開挖／完工點檢 · 可對照 HyD／XPMS 合規要點</p>
+        <p className="mt-1 text-sm axon-muted">
+          請檢查 → 勾選 → Pass／Fail（Fail 自動開事件）
+        </p>
         {msg && <p className="mt-1 text-sm text-emerald-700">{msg}</p>}
+        {createdCaseId && (
+          <Link href={`/cases/${createdCaseId}`} className="mt-1 inline-block text-sm text-[var(--axon-blue)]">
+            前往事件 →
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -117,7 +168,7 @@ export default function ChecklistPage() {
                     className="axon-btn axon-btn-primary shrink-0"
                   >
                     <Play size={14} />
-                    開始
+                    請檢查
                   </button>
                 </div>
               </div>
@@ -136,6 +187,8 @@ export default function ChecklistPage() {
                 onClick={() => {
                   setActive(r);
                   setItems(JSON.parse(r.itemsJson || "[]"));
+                  setNote(r.note || "");
+                  setCreatedCaseId(null);
                 }}
               >
                 <span>
@@ -145,10 +198,20 @@ export default function ChecklistPage() {
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-[10px]",
-                    r.status === "DONE" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
+                    r.status === "PASSED" || r.status === "DONE"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : r.status === "FAILED"
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-amber-100 text-amber-700",
                   )}
                 >
-                  {r.status === "DONE" ? "完成" : "進行中"}
+                  {r.status === "PASSED"
+                    ? "通過"
+                    : r.status === "FAILED"
+                      ? "不合格"
+                      : r.status === "DONE"
+                        ? "完成"
+                        : "進行中"}
                 </span>
               </button>
             ))}
@@ -179,6 +242,7 @@ export default function ChecklistPage() {
                       type="checkbox"
                       className="mt-1"
                       checked={Boolean(item.checked)}
+                      disabled={Boolean(finished)}
                       onChange={(e) => {
                         const next = [...items];
                         next[idx] = { ...item, checked: e.target.checked };
@@ -194,15 +258,41 @@ export default function ChecklistPage() {
                   </label>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button disabled={busy} onClick={() => save(false)} className="axon-btn axon-btn-ghost">
-                  {busy ? <Loader2 className="animate-spin" size={14} /> : null}
-                  儲存
-                </button>
-                <button disabled={busy} onClick={() => save(true)} className="axon-btn axon-btn-ok">
-                  完成點檢
-                </button>
-              </div>
+              <textarea
+                className="axon-input text-sm"
+                rows={2}
+                placeholder="備註（可選）"
+                value={note}
+                disabled={Boolean(finished)}
+                onChange={(e) => setNote(e.target.value)}
+              />
+              {!finished ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <button disabled={busy} onClick={() => save(false)} className="axon-btn axon-btn-ghost">
+                    {busy ? <Loader2 className="animate-spin" size={14} /> : null}
+                    儲存
+                  </button>
+                  <button disabled={busy} onClick={() => save(true)} className="axon-btn axon-btn-ghost">
+                    僅完成
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => inspectResult("PASS")}
+                    className="axon-btn axon-btn-ok"
+                  >
+                    Pass
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => inspectResult("FAIL")}
+                    className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    Fail
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">此點檢已結束（{active.status}）</p>
+              )}
             </div>
           )}
         </section>

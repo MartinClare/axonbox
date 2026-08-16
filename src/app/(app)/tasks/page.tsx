@@ -37,7 +37,7 @@ import { STATUS_COLORS, TASK_STATUS_LABELS, cn, daysRemaining, formatDay } from 
 import { apiFetch, asArray } from "@/lib/api-client";
 import { type MinutesOutputLang, type MinutesProgress, takeMinutesPreview, uploadMinutesPreview, repreviewMinutesText } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
-import { MinutesLangSwitch } from "@/components/MinutesLangSwitch";
+import { MinutesLangSwitch, MinutesUploadGroup } from "@/components/MinutesLangSwitch";
 import {
   COLUMN_THEME,
   TASK_COLUMNS,
@@ -412,6 +412,18 @@ export default function TasksPage() {
   const caseVisible = useMemo(() => visible.filter((t) => !t.meetingId), [visible]);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
+  const agingMinutes = useMemo(() => {
+    const now = Date.now();
+    return tasks.filter(
+      (t) =>
+        t.meetingId &&
+        !t.archived &&
+        t.status !== "DONE" &&
+        t.dueAt &&
+        new Date(t.dueAt).getTime() < now,
+    ).length;
+  }, [tasks]);
+
   function columnTasks(col: string) {
     return caseVisible
       .filter((t) => t.status === col)
@@ -608,10 +620,14 @@ export default function TasksPage() {
           <p className="text-sm axon-muted">
             左側為事件跟進；右側每份會議紀錄自成一個列表，互不混淆
           </p>
+          {agingMinutes > 0 && (
+            <p className="mt-1 text-xs font-medium text-rose-700">
+              {agingMinutes} 項會議行動已逾期
+            </p>
+          )}
           {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <MinutesLangSwitch value={minutesLang} onChange={setMinutesLang} disabled={uploading} />
           <input
             ref={fileRef}
             type="file"
@@ -623,15 +639,21 @@ export default function TasksPage() {
               onPickMinutes(f);
             }}
           />
-          <button
-            type="button"
+          <MinutesUploadGroup
+            value={minutesLang}
+            onChange={setMinutesLang}
             disabled={uploading}
-            onClick={() => fileRef.current?.click()}
-            className="axon-btn axon-btn-primary min-h-9 px-3 text-sm"
           >
-            <FileUp size={14} />
-            {uploading ? "處理中…" : "上傳會議紀錄"}
-          </button>
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              className="axon-btn axon-btn-primary min-h-8 px-3 text-sm"
+            >
+              <FileUp size={14} />
+              {uploading ? "處理中…" : "上傳"}
+            </button>
+          </MinutesUploadGroup>
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" />
             <input
@@ -1200,19 +1222,19 @@ function MinutesPreviewModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500">輸出語言</span>
-            <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
-            <button
-              type="button"
-              disabled={reapplying || confirming || lang === (preview.outputLang || "original")}
-              onClick={applyLanguage}
-              className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
-            >
-              {reapplying ? "套用中…" : "套用"}
-            </button>
-            {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
-          </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-violet-200/80 bg-violet-50/50 px-3 py-2">
+          <span className="text-xs font-medium text-violet-900">會議紀錄輸出</span>
+          <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
+          <button
+            type="button"
+            disabled={reapplying || confirming || lang === (preview.outputLang || "original")}
+            onClick={applyLanguage}
+            className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
+          >
+            {reapplying ? "套用中…" : "套用"}
+          </button>
+          {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
+        </div>
 
           <div className="mb-4 grid gap-2 sm:grid-cols-2">
             <label className="text-xs text-slate-500">

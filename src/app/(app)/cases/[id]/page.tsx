@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Timeline } from "@/components/Timeline";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/labels";
 import { mediaUrl } from "@/lib/media";
 import { apiFetch, asArray } from "@/lib/api-client";
+import { hasAfterEvidence, parseEvidenceTags, tagsIncludeAfter } from "@/lib/case-closeout";
 
 type CaseDetail = {
   id: string;
@@ -29,6 +30,7 @@ type CaseDetail = {
   recommendation: string | null;
   dueAt: string | null;
   discoveredAt: string;
+  closedAt?: string | null;
   assigneeId?: string | null;
   subcontractorId?: string | null;
   assignee?: { id: string; name: string } | null;
@@ -47,6 +49,8 @@ type CaseDetail = {
     mime?: string | null;
     filePath: string | null;
     chatText: string | null;
+    tagsJson?: string | null;
+    createdAt?: string;
   }>;
   tasks: Array<{ id: string; title: string; status: string; instructions: string | null }>;
   project: { name: string; siteCode: string };
@@ -67,6 +71,8 @@ export default function CaseDetailPage() {
   });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [waiveOpen, setWaiveOpen] = useState(false);
+  const [waiveNote, setWaiveNote] = useState("");
 
   async function load() {
     const [cRes, sRes] = await Promise.all([
@@ -98,6 +104,18 @@ export default function CaseDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const afterReady = useMemo(() => {
+    if (!item) return false;
+    return hasAfterEvidence(
+      item.evidence.map((e) => ({
+        id: e.id,
+        createdAt: e.createdAt || item.discoveredAt,
+        tagsJson: e.tagsJson,
+      })),
+      item.events,
+    );
+  }, [item]);
+
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
     setMsg("");
@@ -106,20 +124,105 @@ export default function CaseDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg("操作失敗");
-      return;
+      setMsg(data.message || data.error || "操作失敗");
+      return false;
     }
     setMsg("已更新");
     await load();
     router.refresh();
+    return true;
+  }
+
+  async function tryClose() {
+    if (!item) return;
+    if (!afterReady) {
+      setWaiveOpen(true);
+      setMsg("尚未有整改後證據：請先標記附件，或填寫原因後無圖關閉");
+      return;
+    }
+    await patch({
+      status: "CLOSED",
+      eventType: "CLOSE",
+      eventNote: "核驗通過，事件關閉",
+    });
+  }
+
+  async function confirmWaiveClose() {
+    const note = waiveNote.trim();
+    if (!note) {
+      setMsg("請填寫無圖關閉原因");
+      return;
+    }
+    const ok = await patch({
+      status: "CLOSED",
+      waiveCloseEvidence: true,
+      eventNote: note,
+    });
+    if (ok) {
+      setWaiveOpen(false);
+      setWaiveNote("");
+    }
   }
 
   async function downloadArchive() {
     const res = await fetch(`/api/cases/${id}/archive`);
     const data = await res.json();
     if (data.filePath) window.open(data.filePath, "_blank");
+  }
+
+  async function downloadPack() {
+    setBusy(true);
+    setMsg("");
+    const res = await fetch(`/api/cases/${id}/pack`);
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(data.error || "結案摘要產生失敗");
+      return;
+    }
+    if (data.filePath) window.open(data.filePath, "_blank");
+    setMsg("已產生結案摘要 PDF");
+  }
+
+  async function markAfter(evidenceId: string) {
+    setBusy(true);
+    const res = await fetch(`/api/evidence/${evidenceId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markAfter: true }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setMsg("標記失敗");
+      return;
+    }
+    setMsg("已標記為整改後");
+    await load();
+  }
+
+  async function deleteCase() {
+    if (!item) return;
+    if (
+      !window.confirm(
+        `確定刪除事件 ${item.caseNo}？\n「${item.title}」\n相關任務與日誌會一併刪除；附件會保留但取消關聯。`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    const res = await fetch(`/api/cases/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setMsg(data.error || "刪除失敗");
+      return;
+    }
+    router.push("/cases");
+    router.refresh();
   }
 
   if (!item) {
@@ -136,6 +239,14 @@ export default function CaseDetailPage() {
   }
 
   const remain = daysRemaining(item.dueAt);
+  const openDays = Math.max(
+    0,
+    Math.floor(
+      ((item.closedAt ? new Date(item.closedAt).getTime() : Date.now()) -
+        new Date(item.discoveredAt).getTime()) /
+        86400000,
+    ),
+  );
 
   return (
     <div className="space-y-6">
@@ -153,19 +264,51 @@ export default function CaseDetailPage() {
             <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
               嚴重度：{SEVERITY_LABELS[item.severity]}
             </span>
-            {remain !== null && (
-              <span className={cn("rounded px-2 py-0.5", remain < 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700")}>
-                剩餘 {remain} 天
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
+              已開 {openDays} 天
+            </span>
+            {remain !== null && item.status !== "CLOSED" && (
+              <span
+                className={cn(
+                  "rounded px-2 py-0.5",
+                  remain < 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700",
+                )}
+              >
+                {remain < 0 ? `逾期 ${Math.abs(remain)} 天` : `剩餘 ${remain} 天`}
               </span>
+            )}
+            {afterReady ? (
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">已有整改後證據</span>
+            ) : (
+              item.status !== "CLOSED" && (
+                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-800">尚無整改後證據</span>
+              )
             )}
           </div>
         </div>
-        <button
-          onClick={downloadArchive}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          下載全部證據
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={downloadPack}
+            disabled={busy}
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
+          >
+            結案摘要
+          </button>
+          <button
+            onClick={downloadArchive}
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
+          >
+            下載全部證據
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={deleteCase}
+            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+          >
+            刪除事件
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 border-b border-slate-200">
@@ -184,7 +327,7 @@ export default function CaseDetailPage() {
               "border-b-2 px-4 py-2 text-sm",
               tab === k
                 ? "border-[var(--axon-blue)] text-[var(--axon-blue)]"
-                : "border-transparent text-slate-500"
+                : "border-transparent text-slate-500",
             )}
           >
             {label}
@@ -197,11 +340,26 @@ export default function CaseDetailPage() {
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold">事件資訊</h2>
             <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">位置</dt><dd>{item.location}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">發現時間</dt><dd>{formatDate(item.discoveredAt)}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">負責人</dt><dd>{item.assignee?.name || "—"}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">分判</dt><dd>{item.subcontractor?.name || "—"}</dd></div>
-              <div className="flex justify-between gap-4"><dt className="text-slate-500">項目</dt><dd>{item.project.name}</dd></div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">位置</dt>
+                <dd>{item.location}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">發現時間</dt>
+                <dd>{formatDate(item.discoveredAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">負責人</dt>
+                <dd>{item.assignee?.name || "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">分判</dt>
+                <dd>{item.subcontractor?.name || "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">項目</dt>
+                <dd>{item.project.name}</dd>
+              </div>
             </dl>
             <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
             {item.recommendation && (
@@ -221,7 +379,9 @@ export default function CaseDetailPage() {
               >
                 <option value="">選擇分判商</option>
                 {subs.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
                 ))}
               </select>
               <select
@@ -231,7 +391,9 @@ export default function CaseDetailPage() {
               >
                 <option value="">選擇負責人</option>
                 {users.map((u) => (
-                  <option key={u.id} value={u.id}>{u.name}</option>
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
                 ))}
               </select>
               <input
@@ -293,20 +455,66 @@ export default function CaseDetailPage() {
                 提交核驗
               </button>
               <button
-                disabled={busy}
-                onClick={() =>
-                  patch({
-                    status: "CLOSED",
-                    eventType: "CLOSE",
-                    eventNote: "核驗通過，事件關閉",
-                  })
-                }
-                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white"
+                disabled={busy || item.status === "CLOSED"}
+                onClick={tryClose}
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
               >
                 核驗通過並關閉
               </button>
+              <button
+                disabled={busy}
+                onClick={downloadPack}
+                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+              >
+                下載結案摘要
+              </button>
             </div>
-            {msg && <p className="mt-2 text-sm text-emerald-600">{msg}</p>}
+            {waiveOpen && item.status !== "CLOSED" && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-900">
+                  尚無整改後證據。請到「附件」標記整改後照片，或填寫原因後無圖關閉。
+                </p>
+                <textarea
+                  className="mt-2 w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
+                  rows={2}
+                  placeholder="無圖關閉原因（必填）"
+                  value={waiveNote}
+                  onChange={(e) => setWaiveNote(e.target.value)}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={confirmWaiveClose}
+                    className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs text-white"
+                  >
+                    無圖關閉
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWaiveOpen(false);
+                      setTab("files");
+                    }}
+                    className="rounded-lg border px-3 py-1.5 text-xs"
+                  >
+                    去標記附件
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWaiveOpen(false)}
+                    className="rounded-lg px-3 py-1.5 text-xs text-slate-500"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+            {msg && (
+              <p className={cn("mt-2 text-sm", msg.includes("失敗") || msg.includes("請") ? "text-rose-600" : "text-emerald-600")}>
+                {msg}
+              </p>
+            )}
           </section>
         </div>
       )}
@@ -322,34 +530,50 @@ export default function CaseDetailPage() {
           {item.evidence.map((e) => {
             const href = mediaUrl(e.filePath);
             const image = Boolean(e.mime?.startsWith("image/") && href);
+            const isAfter = tagsIncludeAfter(e.tagsJson);
+            const tags = parseEvidenceTags(e.tagsJson);
             return (
-            <div key={e.id} className="rounded-xl border border-slate-200 bg-white p-3">
-              {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={href!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
-              ) : (
-                <div className="mb-2 flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 text-center text-xs text-slate-500">
-                  <span>{e.type === "CHAT" ? "郵件正文" : e.mime || e.type}</span>
-                  {href && e.type !== "CHAT" && (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[var(--axon-blue)]"
-                    >
-                      開啟附件
-                    </a>
-                  )}
-                </div>
-              )}
-              <div className="text-sm font-medium">{e.title}</div>
-              {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
-            </div>
+              <div key={e.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                {image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={href!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
+                ) : (
+                  <div className="mb-2 flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 text-center text-xs text-slate-500">
+                    <span>{e.type === "CHAT" ? "郵件正文" : e.mime || e.type}</span>
+                    {href && e.type !== "CHAT" && (
+                      <a href={href} target="_blank" rel="noreferrer" className="text-[var(--axon-blue)]">
+                        開啟附件
+                      </a>
+                    )}
+                  </div>
+                )}
+                <div className="text-sm font-medium">{e.title}</div>
+                {tags.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {tags.map((t) => (
+                      <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
+                {isAfter ? (
+                  <p className="mt-2 text-xs font-medium text-emerald-700">已標記整改後</p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => markAfter(e.id)}
+                    className="mt-2 text-xs font-medium text-[var(--axon-blue)] hover:underline"
+                  >
+                    標記為整改後
+                  </button>
+                )}
+              </div>
             );
           })}
-          {item.evidence.length === 0 && (
-            <p className="text-sm text-slate-400">尚無附件</p>
-          )}
+          {item.evidence.length === 0 && <p className="text-sm text-slate-400">尚無附件</p>}
         </section>
       )}
 

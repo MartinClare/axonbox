@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
-import { ROLE_LABELS } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
+import { UI_LOCALE_OPTIONS, type UiLocale } from "@/lib/i18n/types";
+import { cn } from "@/lib/labels";
 
 type SettingsData = {
   project: {
@@ -39,6 +41,7 @@ type OrgInfo = {
 };
 
 export default function SettingsPage() {
+  const { t, locale, setLocale, roleLabels } = useI18n();
   const [data, setData] = useState<SettingsData | null>(null);
   const [org, setOrg] = useState<OrgInfo | null>(null);
   const [form, setForm] = useState({ name: "", siteCode: "", address: "", weather: "" });
@@ -70,31 +73,53 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId: data.project.id, ...form }),
     });
-    if (res.ok) setMsg("已儲存");
+    if (res.ok) setMsg(t("common.saved"));
   }
 
-  if (!data) return <div className="text-sm text-slate-500">載入中…</div>;
+  if (!data) return <div className="text-sm text-slate-500">{t("common.loading")}</div>;
 
   return (
     <div className="mx-auto max-w-xl space-y-5">
       <div>
-        <h1 className="axon-title text-2xl font-semibold">設定</h1>
-        <p className="mt-1 text-sm axon-muted">項目資料與 AI 狀態</p>
+        <h1 className="axon-title text-2xl font-semibold">{t("settings.title")}</h1>
+        <p className="mt-1 text-sm axon-muted">{t("settings.subtitle")}</p>
       </div>
 
       <section className="axon-panel space-y-3 p-5">
-        <h2 className="text-sm font-semibold text-[var(--axon-ink)]">項目資訊</h2>
+        <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("settings.language")}</h2>
+        <p className="text-xs text-slate-500">{t("settings.languageHint")}</p>
+        <div className="inline-flex rounded-xl bg-slate-100 p-1 ring-1 ring-[var(--axon-line)]">
+          {UI_LOCALE_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setLocale(opt.id as UiLocale)}
+              className={cn(
+                "rounded-lg px-4 py-2 text-sm font-medium transition",
+                locale === opt.id
+                  ? "bg-white text-[var(--axon-ink)] shadow-sm"
+                  : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              {opt.native}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="axon-panel space-y-3 p-5">
+        <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("settings.project")}</h2>
         <input
           className="axon-input"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          placeholder="項目名稱"
+          placeholder={t("settings.projectName")}
         />
         <input
           className="axon-input"
           value={form.siteCode}
           onChange={(e) => setForm({ ...form, siteCode: e.target.value })}
-          placeholder="地盤編號"
+          placeholder={t("settings.siteCode")}
         />
         {more && (
           <>
@@ -102,13 +127,13 @@ export default function SettingsPage() {
               className="axon-input"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
-              placeholder="地址"
+              placeholder={t("settings.address")}
             />
             <input
               className="axon-input"
               value={form.weather}
               onChange={(e) => setForm({ ...form, weather: e.target.value })}
-              placeholder="天氣"
+              placeholder={t("settings.weather")}
             />
           </>
         )}
@@ -117,29 +142,27 @@ export default function SettingsPage() {
           onClick={() => setMore((v) => !v)}
           className="text-sm text-[var(--axon-blue)]"
         >
-          {more ? "收合進階欄位" : "更多（地址／天氣）"}
+          {more ? t("settings.lessFields") : t("settings.moreFields")}
         </button>
         <button onClick={save} className="axon-btn axon-btn-primary w-full">
-          儲存
+          {t("common.save")}
         </button>
         {msg && <p className="text-sm text-emerald-600">{msg}</p>}
       </section>
 
       {org && (
         <section className="axon-panel space-y-3 p-5">
-          <h2 className="text-sm font-semibold text-[var(--axon-ink)]">企業權限（可商用）</h2>
+          <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("settings.org")}</h2>
           <p className="text-sm text-slate-600">
-            組織：{org.org.name} · 方案 {org.org.plan}
+            {t("settings.orgLine", { name: org.org.name, plan: org.org.plan })}
           </p>
           <p className="text-sm">
-            我的角色：
+            {t("settings.myRole")}
             <span className="font-medium text-[var(--axon-ink)]">
-              {ROLE_LABELS[org.myRole] || org.roleLabels[org.myRole] || org.myRole}
+              {roleLabels[org.myRole] || org.roleLabels[org.myRole] || org.myRole}
             </span>
           </p>
-          <p className="text-xs text-slate-500">
-            角色層級：企業擁有人 → 管理員 → 現場主管 → 唯讀／分判。寫入人員、組織設定需管理員以上。
-          </p>
+          <p className="text-xs text-slate-500">{t("settings.roleHint")}</p>
           <div className="flex flex-wrap gap-1">
             {org.myPermissions.slice(0, 8).map((p) => (
               <span key={p} className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
@@ -151,46 +174,47 @@ export default function SettingsPage() {
             )}
           </div>
           <Link href="/directory" className="text-sm text-[var(--axon-blue)]">
-            管理成員角色 →
+            {t("settings.manageRoles")}
           </Link>
         </section>
       )}
 
       <section className="axon-panel space-y-2 p-5">
-        <h2 className="text-sm font-semibold text-[var(--axon-ink)]">AI 狀態</h2>
+        <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("settings.ai")}</h2>
         <p className="text-sm">
           <span className={data.aiConfigured ? "text-emerald-600" : "text-amber-600"}>
             {data.aiConfigured
-              ? `已接入（${data.aiProvider || "api"} · ${data.aiModel || "model"}）`
-              : "未設定（Mock）"}
+              ? t("settings.aiOn", {
+                  provider: data.aiProvider || "api",
+                  model: data.aiModel || "model",
+                })
+              : t("settings.aiOff")}
           </span>
         </p>
-        <p className="text-xs text-slate-400">
-          於 .env 設定 OPENROUTER_API_KEY 與 AI_MODEL 後重啟服務。
-        </p>
+        <p className="text-xs text-slate-400">{t("settings.aiHint")}</p>
       </section>
 
       <section className="axon-panel p-5">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-[var(--axon-ink)]">人員與公司</h2>
+          <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("settings.people")}</h2>
           <Link
             href="/directory"
             className="inline-flex items-center gap-1 text-sm text-[var(--axon-blue)]"
           >
-            前往管理
+            {t("settings.goDirectory")}
             <ArrowUpRight size={14} />
           </Link>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <div className="text-2xl font-semibold text-[var(--axon-ink)]">{data.users.length}</div>
-            <div className="text-xs text-slate-500">人員帳號</div>
+            <div className="text-xs text-slate-500">{t("settings.userAccounts")}</div>
           </div>
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <div className="text-2xl font-semibold text-[var(--axon-ink)]">
               {data.subcontractors.length}
             </div>
-            <div className="text-xs text-slate-500">分判公司</div>
+            <div className="text-xs text-slate-500">{t("settings.subCompanies")}</div>
           </div>
         </div>
       </section>

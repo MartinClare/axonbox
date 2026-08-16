@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { KpiCard } from "@/components/KpiCard";
 import { CaseCard } from "@/components/CaseCard";
 import { CategoryDonut, TrendLine } from "@/components/Charts";
+import { DigestCopyButton } from "@/components/DigestCopyButton";
 import Link from "next/link";
 import {
   Camera,
@@ -10,6 +11,8 @@ import {
   FileBarChart,
   BookOpen,
 } from "lucide-react";
+import { getServerUiLocale } from "@/lib/i18n/server";
+import { translate, domainLabelMap } from "@/lib/i18n/messages";
 
 function pctChange(current: number, previous: number) {
   if (previous === 0) return current === 0 ? 0 : 100;
@@ -18,17 +21,37 @@ function pctChange(current: number, previous: number) {
 
 export default async function OverviewPage() {
   try {
+    const locale = await getServerUiLocale();
+    const t = (key: string, vars?: Record<string, string | number>) =>
+      translate(locale, key, vars);
+    const CATEGORY_LABELS = domainLabelMap(locale, "label.category", [
+      "SAFETY",
+      "QUALITY",
+      "PROGRESS",
+      "ENVIRONMENT",
+      "OTHER",
+    ]);
+    const CASE_STATUS_LABELS = domainLabelMap(locale, "label.case", [
+      "OPEN",
+      "ASSIGNED",
+      "IN_PROGRESS",
+      "PENDING_REVIEW",
+      "CLOSED",
+    ]);
+
     const now = new Date();
     const weekAgo = new Date(now);
     weekAgo.setDate(weekAgo.getDate() - 7);
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
-
-    const safetyOpen = await prisma.case.count({
-      where: { category: "SAFETY", status: { not: "CLOSED" } },
-    });
+    const project = await prisma.project.findFirst();
 
     const [
+      safetyOpen,
+      qualityOpen,
+      overdueCases,
+      agingMinutes,
+      pendingInspect,
       activeCases,
       prevActive,
       pendingTasks,
@@ -39,7 +62,27 @@ export default async function OverviewPage() {
       closedWithDates,
       byCategory,
       latest,
+      overdueList,
+      agingList,
     ] = await Promise.all([
+      prisma.case.count({
+        where: { category: "SAFETY", status: { not: "CLOSED" } },
+      }),
+      prisma.case.count({
+        where: { category: "QUALITY", status: { not: "CLOSED" } },
+      }),
+      prisma.case.count({
+        where: { status: { not: "CLOSED" }, dueAt: { lt: now } },
+      }),
+      prisma.task.count({
+        where: {
+          meetingId: { not: null },
+          status: { not: "DONE" },
+          dueAt: { lt: now },
+          archived: false,
+        },
+      }),
+      prisma.checklistRun.count({ where: { status: "IN_PROGRESS" } }),
       prisma.case.count({ where: { status: { not: "CLOSED" } } }),
       prisma.case.count({
         where: { status: { not: "CLOSED" }, createdAt: { lt: weekAgo } },
@@ -75,6 +118,23 @@ export default async function OverviewPage() {
         take: 5,
         include: { evidence: { take: 1 } },
       }),
+      prisma.case.findMany({
+        where: { status: { not: "CLOSED" }, dueAt: { lt: now } },
+        orderBy: { dueAt: "asc" },
+        take: 6,
+        select: { caseNo: true, title: true, category: true, status: true },
+      }),
+      prisma.task.findMany({
+        where: {
+          meetingId: { not: null },
+          status: { not: "DONE" },
+          dueAt: { lt: now },
+          archived: false,
+        },
+        orderBy: { dueAt: "asc" },
+        take: 6,
+        select: { title: true, dueAt: true, meeting: { select: { title: true } } },
+      }),
     ]);
 
     const avgCloseDays =
@@ -107,26 +167,52 @@ export default async function OverviewPage() {
       });
     }
 
+    const digestLines = [
+      `【AxonBox 週報摘要】${project?.name || "項目"} · ${now.toLocaleDateString("zh-HK")}`,
+      `未關安全 ${safetyOpen} · 未關品質 ${qualityOpen} · 逾期事件 ${overdueCases}`,
+      `會議行動逾期 ${agingMinutes} · 進行中點檢 ${pendingInspect}`,
+      "",
+      overdueList.length
+        ? "逾期事件：\n" +
+          overdueList
+            .map(
+              (c) =>
+                `• ${c.caseNo} ${c.title}（${CATEGORY_LABELS[c.category] || c.category}/${CASE_STATUS_LABELS[c.status] || c.status}）`,
+            )
+            .join("\n")
+        : "逾期事件：無",
+      "",
+      agingList.length
+        ? "逾期會議行動：\n" +
+          agingList
+            .map((t) => `• ${t.title}${t.meeting?.title ? `（${t.meeting.title}）` : ""}`)
+            .join("\n")
+        : "逾期會議行動：無",
+    ];
+
     return (
       <div className="axon-page">
         <div className="axon-page-header">
           <div>
-            <p className="axon-kicker">Command Center</p>
-            <h1 className="axon-title mt-1 text-2xl font-semibold sm:text-3xl">總覽</h1>
-            <p className="axon-muted mt-1.5 text-sm">一屏看清：風險、進度、待辦</p>
+            <p className="axon-kicker">{t("home.kicker")}</p>
+            <h1 className="axon-title mt-1 text-2xl font-semibold sm:text-3xl">{t("home.title")}</h1>
+            <p className="axon-muted mt-1.5 text-sm">{t("home.subtitle")}</p>
           </div>
-          <Link href="/capture" className="axon-btn axon-btn-accent px-5">
-            <Camera size={15} />
-            拍照分析場地
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <DigestCopyButton text={digestLines.join("\n")} />
+            <Link href="/capture" className="axon-btn axon-btn-accent px-5">
+              <Camera size={15} />
+              {t("home.capture")}
+            </Link>
+          </div>
         </div>
 
         <div className="axon-quick-grid">
           {[
-            { href: "/inbox", label: "訊息收件", icon: Inbox },
-            { href: "/checklist", label: "現場點檢", icon: CheckSquare },
-            { href: "/reports", label: "出報告", icon: FileBarChart },
-            { href: "/knowledge", label: "工程提問", icon: BookOpen },
+            { href: "/inbox", label: t("nav.inbox"), icon: Inbox },
+            { href: "/checklist", label: t("nav.checklist"), icon: CheckSquare },
+            { href: "/reports", label: t("nav.reports"), icon: FileBarChart },
+            { href: "/knowledge", label: t("nav.knowledge"), icon: BookOpen },
           ].map((a) => {
             const Icon = a.icon;
             return (
@@ -140,20 +226,48 @@ export default async function OverviewPage() {
           })}
         </div>
 
-        {safetyOpen > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Link href="/cases?category=SAFETY" className="block">
+            <KpiCard label="未關安全" value={safetyOpen} hint="優先處理" />
+          </Link>
+          <Link href="/cases?category=QUALITY" className="block">
+            <KpiCard label="未關品質" value={qualityOpen} hint="品質跟進" />
+          </Link>
+          <Link href="/cases?overdue=1" className="block">
+            <KpiCard label="逾期事件" value={overdueCases} hint="已過期限" />
+          </Link>
+          <Link href="/tasks" className="block">
+            <KpiCard label="會議行動逾期" value={agingMinutes} hint="會議列表" />
+          </Link>
+        </div>
+
+        {(safetyOpen > 0 || pendingInspect > 0) && (
           <div className="axon-panel flex flex-wrap items-center justify-between gap-3 border-l-[3px] border-l-[var(--axon-danger)] px-5 py-4">
             <div>
               <div className="text-sm font-semibold text-[var(--axon-ink)]">
-                {safetyOpen} 項安全漏洞尚未關閉
+                {safetyOpen > 0
+                  ? `${safetyOpen} 項安全漏洞尚未關閉`
+                  : `${pendingInspect} 項點檢進行中`}
               </div>
-              <p className="axon-muted mt-0.5 text-xs">優先處理高風險項，避免現場停工風險</p>
+              <p className="axon-muted mt-0.5 text-xs">
+                {pendingInspect > 0 ? `另有 ${pendingInspect} 項現場點檢未完結` : "優先處理高風險項"}
+              </p>
             </div>
-            <Link
-              href="/cases?category=SAFETY&status=OPEN"
-              className="text-sm font-semibold text-[var(--axon-danger)]"
-            >
-              查看安全事件 →
-            </Link>
+            <div className="flex flex-wrap gap-3">
+              {pendingInspect > 0 && (
+                <Link href="/checklist" className="text-sm font-semibold text-[var(--axon-blue)]">
+                  點檢 →
+                </Link>
+              )}
+              {safetyOpen > 0 && (
+                <Link
+                  href="/cases?category=SAFETY"
+                  className="text-sm font-semibold text-[var(--axon-danger)]"
+                >
+                  查看安全事件 →
+                </Link>
+              )}
+            </div>
           </div>
         )}
 

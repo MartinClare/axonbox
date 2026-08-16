@@ -17,14 +17,7 @@ import {
   Undo2,
   FileUp,
 } from "lucide-react";
-import {
-  CHANNEL_LABELS,
-  INBOX_STATUS_LABELS,
-  CATEGORY_LABELS,
-  SEVERITY_LABELS,
-  SEVERITY_COLORS,
-  cn,
-} from "@/lib/labels";
+import { SEVERITY_COLORS, cn } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
 import {
   type MinutesOutputLang,
@@ -33,7 +26,8 @@ import {
   uploadMinutesPreview,
 } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
-import { MinutesLangSwitch } from "@/components/MinutesLangSwitch";
+import { MinutesUploadGroup } from "@/components/MinutesLangSwitch";
+import { useI18n } from "@/components/I18nProvider";
 
 type InboxRow = {
   id: string;
@@ -71,6 +65,12 @@ const channelIcon = {
 
 export default function InboxPage() {
   const router = useRouter();
+  const {
+    channelLabels,
+    inboxStatusLabels,
+    categoryLabels,
+    severityLabels,
+  } = useI18n();
   const minutesFileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [counts, setCounts] = useState({ pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
@@ -499,38 +499,39 @@ export default function InboxPage() {
                           : "text-slate-600 hover:bg-white",
                       )}
                     >
-                      {CHANNEL_LABELS[c]}
+                      {channelLabels[c]}
                     </button>
                   ))}
-                  <input
-                    ref={minutesFileRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] || null;
-                      e.target.value = "";
-                      onPickMinutes(f);
-                    }}
-                  />
-                  <div className="flex flex-wrap items-center gap-1.5 px-1">
-                    <MinutesLangSwitch
-                      value={minutesLang}
-                      onChange={setMinutesLang}
-                      disabled={busy}
-                    />
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => minutesFileRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-purple-800 transition hover:bg-white"
-                      title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
-                    >
-                      <FileUp size={14} />
-                      {busy && minutesProgress ? "處理中…" : "會議紀錄"}
-                    </button>
-                  </div>
                 </div>
+
+                <input
+                  ref={minutesFileRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    e.target.value = "";
+                    onPickMinutes(f);
+                  }}
+                />
+                <MinutesUploadGroup
+                  value={minutesLang}
+                  onChange={setMinutesLang}
+                  disabled={busy}
+                  className="w-full sm:w-auto"
+                >
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => minutesFileRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-violet-900 ring-1 ring-violet-200 transition hover:bg-violet-50 disabled:opacity-50"
+                    title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
+                  >
+                    <FileUp size={14} />
+                    {busy && minutesProgress ? "處理中…" : "上傳檔案"}
+                  </button>
+                </MinutesUploadGroup>
 
                 {(channel === "EMAIL" || channel === "MANUAL") && (
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -658,11 +659,11 @@ export default function InboxPage() {
                             {row.subject || row.body.slice(0, 40)}
                           </span>
                           <span className="shrink-0 text-[10px] text-slate-400">
-                            {INBOX_STATUS_LABELS[row.status] || row.status}
+                            {inboxStatusLabels[row.status] || row.status}
                           </span>
                         </div>
                         <div className="mt-0.5 truncate text-xs text-slate-500">
-                          {CHANNEL_LABELS[row.channel]}
+                          {channelLabels[row.channel]}
                           {row.forwardedByName || row.mailbox
                             ? ` · ${row.forwardedByName || row.mailbox}`
                             : ""}{" "}
@@ -693,7 +694,7 @@ export default function InboxPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span className="rounded-md bg-slate-100 px-2 py-0.5">
-                    {CHANNEL_LABELS[selected.channel]}
+                    {channelLabels[selected.channel]}
                   </span>
                   {(selected.forwardedByName || selected.mailbox) && (
                     <span className="rounded-md bg-blue-50 px-2 py-0.5 text-blue-700">
@@ -765,10 +766,10 @@ export default function InboxPage() {
                 <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[var(--axon-navy)] px-2.5 py-0.5 text-[11px] text-white">
-                      {CATEGORY_LABELS[extract.category] || extract.category}
+                      {categoryLabels[extract.category] || extract.category}
                     </span>
                     <span className={cn("text-xs font-semibold", SEVERITY_COLORS[extract.severity])}>
-                      {SEVERITY_LABELS[extract.severity]} 風險
+                      {severityLabels[extract.severity]}
                     </span>
                   </div>
                   <div className="text-base font-semibold text-[var(--axon-ink)]">{extract.title}</div>

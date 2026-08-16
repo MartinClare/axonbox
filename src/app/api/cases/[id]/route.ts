@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireSession, resolveActorId } from "@/lib/session";
+import { requirePermission, requireSession, resolveActorId } from "@/lib/session";
+import { hasAfterEvidence } from "@/lib/case-closeout";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -59,13 +60,54 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       data.assigneeId = await resolveActorId(data.assigneeId);
     }
 
+    if (body.status === "CLOSED") {
+      const current = await prisma.case.findUnique({
+        where: { id },
+        include: {
+          evidence: true,
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      });
+      if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+      const hasAfter = hasAfterEvidence(current.evidence, current.events);
+      const waive = body.waiveCloseEvidence === true;
+      if (!hasAfter && !waive) {
+        return NextResponse.json(
+          {
+            error: "CLOSE_EVIDENCE_REQUIRED",
+            message: "關閉前請上傳或標記「整改後」證據，或選擇無圖關閉並填寫原因",
+          },
+          { status: 400 },
+        );
+      }
+      if (!hasAfter && waive) {
+        const note = String(body.eventNote || "").trim();
+        if (!note) {
+          return NextResponse.json(
+            { error: "請填寫無圖關閉原因", message: "請填寫無圖關閉原因" },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
     const updated = await prisma.case.update({ where: { id }, data });
 
-    if (body.eventType) {
+    // Avoid duplicate CLOSE + CLOSE_WAIVE events
+    const shouldLogEvent =
+      Boolean(body.eventType) ||
+      (body.status === "CLOSED" && body.waiveCloseEvidence === true);
+
+    if (shouldLogEvent) {
+      const eventType =
+        body.status === "CLOSED" && body.waiveCloseEvidence === true
+          ? "CLOSE_WAIVE"
+          : String(body.eventType || "CLOSE");
       await prisma.caseEvent.create({
         data: {
           caseId: id,
-          type: String(body.eventType),
+          type: eventType,
           note: body.eventNote ? String(body.eventNote) : null,
           actorId,
         },
@@ -138,7 +180,34 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     console.error("PATCH /api/cases/[id] failed", err);
     return NextResponse.json(
       { error: "Update failed", detail: String(err) },
-      { status: 500 }
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(_req: NextRequest, ctx: Ctx) {
+  const { error } = await requirePermission("cases:write");
+  if (error) return error;
+  const { id } = await ctx.params;
+
+  const existing = await prisma.case.findUnique({
+    where: { id },
+    select: { id: true, caseNo: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  try {
+    await prisma.$transaction([
+      prisma.evidence.updateMany({ where: { caseId: id }, data: { caseId: null } }),
+      prisma.inboxMessage.updateMany({ where: { caseId: id }, data: { caseId: null } }),
+      prisma.case.delete({ where: { id } }),
+    ]);
+    return NextResponse.json({ ok: true, deleted: 1, caseNo: existing.caseNo });
+  } catch (err) {
+    console.error("DELETE /api/cases/[id] failed", err);
+    return NextResponse.json(
+      { error: "Delete failed", detail: String(err) },
+      { status: 500 },
     );
   }
 }
