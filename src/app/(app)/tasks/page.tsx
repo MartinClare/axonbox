@@ -33,7 +33,8 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { STATUS_COLORS, TASK_STATUS_LABELS, cn, daysRemaining, formatDay } from "@/lib/labels";
+import { STATUS_COLORS, cn, daysRemaining, formatDay } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
 import { apiFetch, asArray } from "@/lib/api-client";
 import { type MinutesOutputLang, type MinutesProgress, takeMinutesPreview, uploadMinutesPreview, repreviewMinutesText } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
@@ -173,6 +174,7 @@ function dueTone(task: Task) {
 }
 
 function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
+  const { t } = useI18n();
   const labels = parseLabels(task.labelsJson);
   const checks = parseChecklist(task.checklistJson);
   const done = checks.filter((c) => c.checked).length;
@@ -180,8 +182,8 @@ function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
   const remain = daysRemaining(task.dueAt);
   const overdue = remain !== null && remain < 0 && task.status !== "DONE";
   const badge = task.meetingId
-    ? "會議"
-    : task.case?.caseNo || "—";
+    ? t("tasks.meeting")
+    : task.case?.caseNo || t("common.none");
 
   return (
     <div
@@ -301,6 +303,7 @@ function ColumnDrop({
 }
 
 export default function TasksPage() {
+  const { t, taskStatusLabels } = useI18n();
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -543,12 +546,12 @@ export default function TasksPage() {
     if (!file) return;
     setUploading(true);
     setError("");
-    setUploadProgress({ pct: 4, label: "開始處理…" });
+    setUploadProgress({ pct: 4, label: t("inbox.startProcess") });
     try {
       const data = await uploadMinutesPreview(file, setUploadProgress, {
         outputLang: minutesLang,
       });
-      setUploadProgress({ pct: 100, label: "完成" });
+      setUploadProgress({ pct: 100, label: t("common.done") });
       await new Promise((r) => setTimeout(r, 280));
       setPreview({
         title: data.title,
@@ -560,7 +563,7 @@ export default function TasksPage() {
         mock: data.mock,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上傳失敗");
+      setError(err instanceof Error ? err.message : t("tasks.uploadFail"));
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -584,7 +587,7 @@ export default function TasksPage() {
     });
     setConfirming(false);
     if (!res.ok) {
-      setError(res.error || "建立失敗");
+      setError(res.error || t("tasks.createFail"));
       return;
     }
     setPreview(null);
@@ -594,7 +597,7 @@ export default function TasksPage() {
 
   async function renameMeeting(id: string) {
     const current = meetings.find((m) => m.id === id);
-    const next = window.prompt("列表名稱", current?.title || "");
+    const next = window.prompt(t("tasks.listName"), current?.title || "");
     if (!next?.trim()) return;
     await apiFetch(`/api/meetings/${id}`, {
       method: "PATCH",
@@ -606,7 +609,7 @@ export default function TasksPage() {
   }
 
   async function deleteMeeting(id: string) {
-    if (!window.confirm("刪除此會議列表及其中所有卡片？")) return;
+    if (!window.confirm(t("tasks.deleteListConfirm"))) return;
     await apiFetch(`/api/meetings/${id}`, { method: "DELETE" });
     setMenuMeetingId(null);
     await load();
@@ -616,13 +619,13 @@ export default function TasksPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="axon-title text-2xl font-semibold">任務管理</h1>
+          <h1 className="axon-title text-2xl font-semibold">{t("tasks.title")}</h1>
           <p className="text-sm axon-muted">
-            左側為事件跟進；右側每份會議紀錄自成一個列表，互不混淆
+            {t("tasks.subtitle")}
           </p>
           {agingMinutes > 0 && (
             <p className="mt-1 text-xs font-medium text-rose-700">
-              {agingMinutes} 項會議行動已逾期
+              {t("tasks.overdueActions", { n: agingMinutes })}
             </p>
           )}
           {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
@@ -651,14 +654,14 @@ export default function TasksPage() {
               className="axon-btn axon-btn-primary min-h-8 px-3 text-sm"
             >
               <FileUp size={14} />
-              {uploading ? "處理中…" : "上傳"}
+              {uploading ? t("common.processing") : t("common.upload")}
             </button>
           </MinutesUploadGroup>
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" />
             <input
               className="axon-input h-9 min-h-0 w-44 pl-8 text-sm"
-              placeholder="搜尋卡片…"
+              placeholder={t("tasks.searchCards")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -669,7 +672,7 @@ export default function TasksPage() {
             className="axon-btn axon-btn-ghost min-h-9 px-3 text-sm"
           >
             <Archive size={14} />
-            封存 {archived.length}
+            {t("tasks.archive")} {archived.length}
           </button>
           <div className="flex gap-1 rounded-lg bg-white p-1 ring-1 ring-[var(--axon-line)]">
             <button
@@ -679,7 +682,7 @@ export default function TasksPage() {
                 view === "board" ? "bg-[var(--axon-ink)] text-white" : "text-slate-600",
               )}
             >
-              看板
+              {t("tasks.viewBoard")}
             </button>
             <button
               onClick={() => setView("list")}
@@ -688,7 +691,7 @@ export default function TasksPage() {
                 view === "list" ? "bg-[var(--axon-ink)] text-white" : "text-slate-600",
               )}
             >
-              列表
+              {t("tasks.viewList")}
             </button>
           </div>
         </div>
@@ -711,7 +714,7 @@ export default function TasksPage() {
         ))}
         {labelFilter && (
           <button type="button" onClick={() => setLabelFilter(null)} className="text-xs text-slate-500">
-            清除篩選
+            {t("tasks.clearFilter")}
           </button>
         )}
       </div>
@@ -738,7 +741,7 @@ export default function TasksPage() {
                     <div className="mb-2 flex items-center gap-2 px-1 py-1">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ background: theme.bar }} />
                       <h2 className="text-sm font-semibold" style={{ color: theme.ink }}>
-                        {theme.name}
+                        {taskStatusLabels[col] || theme.name}
                       </h2>
                       <span className="ml-auto rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-500">
                         {rows.length}
@@ -761,7 +764,7 @@ export default function TasksPage() {
                         <input
                           autoFocus
                           className="axon-input min-h-0 py-2 text-sm"
-                          placeholder="輸入卡片標題…"
+                          placeholder={t("tasks.cardTitlePh")}
                           value={draftTitle}
                           onChange={(e) => setDraftTitle(e.target.value)}
                           onKeyDown={(e) => {
@@ -774,7 +777,7 @@ export default function TasksPage() {
                           value={draftCaseId}
                           onChange={(e) => setDraftCaseId(e.target.value)}
                         >
-                          {cases.length === 0 && <option value="">尚無事件可關聯</option>}
+                          {cases.length === 0 && <option value="">{t("tasks.noCaseLink")}</option>}
                           {cases.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.caseNo} · {c.title}
@@ -787,7 +790,7 @@ export default function TasksPage() {
                             onClick={() => addCard(col)}
                             className="axon-btn axon-btn-primary min-h-8 flex-1 px-3 text-xs"
                           >
-                            新增卡片
+                            {t("tasks.addCard")}
                           </button>
                           <button
                             type="button"
@@ -805,7 +808,7 @@ export default function TasksPage() {
                         className="mt-1 flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-slate-600 hover:bg-white/70"
                       >
                         <Plus size={14} />
-                        新增卡片
+                        {t("tasks.addCard")}
                       </button>
                     )}
                   </section>
@@ -831,7 +834,7 @@ export default function TasksPage() {
                       <div className="min-w-0 flex-1">
                         <h2 className="truncate text-sm font-semibold text-purple-900">{m.title}</h2>
                         <p className="text-[10px] text-purple-700/80">
-                          會議列表
+                          {t("tasks.meetingList")}
                           {m.meetingAt ? ` · ${formatDay(m.meetingAt)}` : ""}
                         </p>
                       </div>
@@ -855,14 +858,14 @@ export default function TasksPage() {
                               className="block w-full px-3 py-1.5 text-left hover:bg-slate-50"
                               onClick={() => renameMeeting(m.id)}
                             >
-                              重新命名
+                              {t("tasks.renameList")}
                             </button>
                             <button
                               type="button"
                               className="block w-full px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50"
                               onClick={() => deleteMeeting(m.id)}
                             >
-                              刪除列表
+                              {t("tasks.deleteList")}
                             </button>
                           </div>
                         )}
@@ -883,7 +886,7 @@ export default function TasksPage() {
                     <button
                       type="button"
                       onClick={async () => {
-                        const title = window.prompt("新行動項目");
+                        const title = window.prompt(t("tasks.newAction"));
                         if (!title?.trim()) return;
                         await apiFetch("/api/tasks", {
                           method: "POST",
@@ -900,7 +903,7 @@ export default function TasksPage() {
                       className="mt-1 flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-purple-800 hover:bg-white/70"
                     >
                       <Plus size={14} />
-                      新增卡片
+                      {t("tasks.addCard")}
                     </button>
                   </section>
                 );
@@ -914,23 +917,23 @@ export default function TasksPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
-                <th className="px-4 py-3">任務</th>
-                <th className="px-4 py-3">來源</th>
-                <th className="px-4 py-3">負責人</th>
-                <th className="px-4 py-3">期限</th>
-                <th className="px-4 py-3">狀態</th>
+                <th className="px-4 py-3">{t("tasks.col.task")}</th>
+                <th className="px-4 py-3">{t("tasks.col.source")}</th>
+                <th className="px-4 py-3">{t("tasks.col.assignee")}</th>
+                <th className="px-4 py-3">{t("tasks.col.due")}</th>
+                <th className="px-4 py-3">{t("tasks.col.status")}</th>
               </tr>
             </thead>
             <tbody>
-              {visible.map((t) => (
+              {visible.map((row) => (
                 <tr
-                  key={t.id}
+                  key={row.id}
                   className="cursor-pointer border-t hover:bg-slate-50"
-                  onClick={() => setOpen(t)}
+                  onClick={() => setOpen(row)}
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {parseLabels(t.labelsJson)
+                      {parseLabels(row.labelsJson)
                         .slice(0, 3)
                         .map((id) => {
                           const meta = labelMeta(id);
@@ -942,27 +945,27 @@ export default function TasksPage() {
                             />
                           ) : null;
                         })}
-                      {t.title}
+                      {row.title}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {t.case ? (
+                    {row.case ? (
                       <Link
-                        href={`/cases/${t.case.id}`}
+                        href={`/cases/${row.case.id}`}
                         className="text-[var(--axon-blue)]"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {t.case.caseNo}
+                        {row.case.caseNo}
                       </Link>
                     ) : (
-                      <span className="text-purple-700">{t.meeting?.title || "會議"}</span>
+                      <span className="text-purple-700">{row.meeting?.title || t("tasks.meeting")}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">{t.assignee?.name || "—"}</td>
-                  <td className="px-4 py-3">{t.dueAt ? formatDay(t.dueAt) : "—"}</td>
+                  <td className="px-4 py-3">{row.assignee?.name || t("common.none")}</td>
+                  <td className="px-4 py-3">{row.dueAt ? formatDay(row.dueAt) : t("common.none")}</td>
                   <td className="px-4 py-3">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs", STATUS_COLORS[t.status])}>
-                      {TASK_STATUS_LABELS[t.status]}
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs", STATUS_COLORS[row.status])}>
+                      {taskStatusLabels[row.status] || row.status}
                     </span>
                   </td>
                 </tr>
@@ -994,7 +997,7 @@ export default function TasksPage() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
           <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">已封存卡片</h2>
+              <h2 className="text-lg font-semibold">{t("tasks.archived")}</h2>
               <button
                 onClick={() => setShowArchive(false)}
                 className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
@@ -1002,14 +1005,14 @@ export default function TasksPage() {
                 <X size={16} />
               </button>
             </div>
-            {archived.length === 0 && <p className="text-sm text-slate-400">沒有封存卡片</p>}
+            {archived.length === 0 && <p className="text-sm text-slate-400">{t("tasks.noArchived")}</p>}
             <div className="space-y-2">
-              {archived.map((t) => (
-                <div key={t.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">
+              {archived.map((row) => (
+                <div key={row.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{t.title}</div>
+                    <div className="truncate text-sm font-medium">{row.title}</div>
                     <div className="text-xs text-slate-400">
-                      {t.case?.caseNo || t.meeting?.title || "—"}
+                      {row.case?.caseNo || row.meeting?.title || t("common.none")}
                     </div>
                   </div>
                   <button
@@ -1018,26 +1021,26 @@ export default function TasksPage() {
                       await apiFetch("/api/tasks", {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ id: t.id, archived: false }),
+                        body: JSON.stringify({ id: row.id, archived: false }),
                       });
                       await load();
                     }}
                   >
-                    還原
+                    {t("tasks.restore")}
                   </button>
                   <button
                     className="text-xs text-rose-600"
                     onClick={async () => {
-                      if (!window.confirm("永久刪除此卡片？")) return;
+                      if (!window.confirm(t("tasks.deleteCardConfirm"))) return;
                       await apiFetch("/api/tasks", {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ id: t.id, delete: true }),
+                        body: JSON.stringify({ id: row.id, delete: true }),
                       });
                       await load();
                     }}
                   >
-                    刪除
+                    {t("common.delete")}
                   </button>
                 </div>
               ))}
@@ -1066,6 +1069,7 @@ function MinutesPreviewModal({
   onConfirm: () => void;
   onUserCreated: (u: UserOpt) => void;
 }) {
+  const { t } = useI18n();
   const [lang, setLang] = useState<MinutesOutputLang>(preview.outputLang || "original");
   const [reapplying, setReapplying] = useState(false);
   const [reapplyError, setReapplyError] = useState("");
@@ -1104,7 +1108,7 @@ function MinutesPreviewModal({
     const name = createName.trim();
     const email = createEmail.trim().toLowerCase();
     if (!name || !email) {
-      setCreateError("請填寫姓名與電郵");
+      setCreateError(t("tasks.needNameEmail"));
       return;
     }
     setCreateBusy(true);
@@ -1123,16 +1127,16 @@ function MinutesPreviewModal({
       };
       if (!res.ok) {
         if (res.status === 409 || data.error === "email already exists") {
-          setCreateError("電郵已存在");
+          setCreateError(t("tasks.emailExists"));
         } else if (res.status === 403) {
-          setCreateError("無權限新增人員");
+          setCreateError(t("tasks.noPermAdd"));
         } else {
-          setCreateError(data.error || "新增失敗");
+          setCreateError(data.error || t("tasks.addFail"));
         }
         return;
       }
       if (!data.id || !data.name) {
-        setCreateError("新增失敗");
+        setCreateError(t("tasks.addFail"));
         return;
       }
       const user: UserOpt = { id: data.id, name: data.name };
@@ -1148,7 +1152,7 @@ function MinutesPreviewModal({
       });
       closeCreatePerson();
     } catch {
-      setCreateError("網路錯誤，請稍後再試");
+      setCreateError(t("common.networkError"));
     } finally {
       setCreateBusy(false);
     }
@@ -1156,7 +1160,7 @@ function MinutesPreviewModal({
 
   async function applyLanguage() {
     if (!preview.rawText?.trim()) {
-      setReapplyError("沒有可重新分析的原文");
+      setReapplyError(t("tasks.noSource"));
       return;
     }
     setReapplying(true);
@@ -1176,7 +1180,7 @@ function MinutesPreviewModal({
         mock: data.mock,
       });
     } catch (err) {
-      setReapplyError(err instanceof Error ? err.message : "重新分析失敗");
+      setReapplyError(err instanceof Error ? err.message : t("tasks.reanalyzeFail"));
     } finally {
       setReapplying(false);
     }
@@ -1199,11 +1203,11 @@ function MinutesPreviewModal({
       >
         <div className="mb-4 flex shrink-0 items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--axon-ink)]">分析會議紀錄</h2>
+            <h2 className="text-lg font-semibold text-[var(--axon-ink)]">{t("tasks.analyzeTitle")}</h2>
             <p className="mt-1 text-xs text-slate-500">
-              來自 {preview.sourceName}
-              {preview.mock ? " · Mock 分析" : ""}
-              。確認行動項目後會在看板右側新增一個會議列表。
+              {t("tasks.fromSource", { name: preview.sourceName })}
+              {preview.mock ? t("tasks.mockSuffix") : ""}
+              {t("tasks.previewHint")}
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -1211,7 +1215,7 @@ function MinutesPreviewModal({
               type="button"
               onClick={() => setExpanded((v) => !v)}
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-              title={expanded ? "還原視窗" : "放大視窗"}
+              title={expanded ? t("common.collapse") : t("common.expand")}
             >
               {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
@@ -1223,7 +1227,7 @@ function MinutesPreviewModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-violet-200/80 bg-violet-50/50 px-3 py-2">
-          <span className="text-xs font-medium text-violet-900">會議紀錄輸出</span>
+          <span className="text-xs font-medium text-violet-900">{t("tasks.minutesOut")}</span>
           <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
           <button
             type="button"
@@ -1231,14 +1235,14 @@ function MinutesPreviewModal({
             onClick={applyLanguage}
             className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
           >
-            {reapplying ? "套用中…" : "套用"}
+            {reapplying ? t("common.applying") : t("common.apply")}
           </button>
           {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
         </div>
 
           <div className="mb-4 grid gap-2 sm:grid-cols-2">
             <label className="text-xs text-slate-500">
-              列表名稱
+              {t("tasks.listName")}
               <input
                 className="axon-input mt-1 min-h-0 py-2 text-sm"
                 value={preview.title}
@@ -1246,7 +1250,7 @@ function MinutesPreviewModal({
               />
             </label>
             <label className="text-xs text-slate-500">
-              會議日期
+              {t("tasks.meetingDate")}
               <input
                 type="date"
                 className="axon-input mt-1 min-h-0 py-2 text-sm"
@@ -1269,14 +1273,14 @@ function MinutesPreviewModal({
                     rows={3}
                     value={a.title}
                     onChange={(e) => updateAction(idx, { title: e.target.value })}
-                    placeholder="行動項目"
+                    placeholder={t("tasks.actionPh")}
                   />
                   <textarea
                     className="axon-input min-h-[3rem] resize-y py-2 text-xs text-slate-600"
                     rows={2}
                     value={a.notes || ""}
                     onChange={(e) => updateAction(idx, { notes: e.target.value || null })}
-                    placeholder="備註（可選）"
+                    placeholder={t("tasks.notesOpt")}
                   />
                   <div className="flex flex-wrap items-center gap-2">
                     <select
@@ -1291,7 +1295,7 @@ function MinutesPreviewModal({
                       }
                     >
                       <option value="">
-                        {a.assigneeName ? `未對應：${a.assigneeName}` : "未指派"}
+                        {a.assigneeName ? t("tasks.unmatched", { name: a.assigneeName }) : t("common.unassigned")}
                       </option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>
@@ -1327,15 +1331,15 @@ function MinutesPreviewModal({
                       className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--axon-blue)] hover:bg-sky-50"
                     >
                       <UserPlus size={13} />
-                      新增「{a.assigneeName}」
+                      {t("tasks.addNamedPerson", { name: a.assigneeName || "" })}
                     </button>
                   )}
                   {creatingIdx === idx && (
                     <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-3">
-                      <div className="mb-2 text-xs font-medium text-slate-600">新增人員到通訊錄</div>
+                      <div className="mb-2 text-xs font-medium text-slate-600">{t("tasks.addPerson")}</div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="text-[11px] text-slate-500">
-                          姓名
+                          {t("common.name")}
                           <input
                             className="axon-input mt-1 min-h-0 py-1.5 text-sm"
                             value={createName}
@@ -1344,7 +1348,7 @@ function MinutesPreviewModal({
                           />
                         </label>
                         <label className="text-[11px] text-slate-500">
-                          電郵
+                          {t("common.email")}
                           <input
                             type="email"
                             className="axon-input mt-1 min-h-0 py-1.5 text-sm"
@@ -1365,7 +1369,7 @@ function MinutesPreviewModal({
                           onClick={submitCreatePerson}
                           className="axon-btn axon-btn-primary min-h-8 px-3 text-xs"
                         >
-                          {createBusy ? "建立中…" : "建立並指派"}
+                          {createBusy ? t("common.creating") : t("tasks.createAssign")}
                         </button>
                         <button
                           type="button"
@@ -1373,7 +1377,7 @@ function MinutesPreviewModal({
                           onClick={closeCreatePerson}
                           className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
                         >
-                          取消
+                          {t("common.cancel")}
                         </button>
                       </div>
                     </div>
@@ -1382,14 +1386,14 @@ function MinutesPreviewModal({
               );
             })}
             {preview.actions.length === 0 && (
-              <p className="py-6 text-center text-sm text-slate-400">沒有行動項目</p>
+              <p className="py-6 text-center text-sm text-slate-400">{t("tasks.noActions")}</p>
             )}
           </div>
         </div>
 
         <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--axon-line)] pt-4">
           <button type="button" onClick={onClose} className="axon-btn axon-btn-ghost min-h-9 px-4 text-sm">
-            取消
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -1397,7 +1401,7 @@ function MinutesPreviewModal({
             onClick={onConfirm}
             className="axon-btn axon-btn-primary min-h-9 px-4 text-sm"
           >
-            {confirming ? "建立中…" : `建立列表（${preview.actions.length}）`}
+            {confirming ? t("common.creating") : t("tasks.createList", { n: preview.actions.length })}
           </button>
         </div>
       </div>
@@ -1416,6 +1420,7 @@ function CardModal({
   onClose: () => void;
   onSave: (id: string, patch: Record<string, unknown>) => Promise<void>;
 }) {
+  const { t, taskStatusLabels } = useI18n();
   const isMeeting = Boolean(task.meetingId);
   const [title, setTitle] = useState(task.title);
   const [instructions, setInstructions] = useState(task.instructions || "");
@@ -1472,19 +1477,19 @@ function CardModal({
             <p className="text-xs text-slate-500">
               {isMeeting ? (
                 <>
-                  會議列表{" "}
+                  {t("tasks.meetingList")}{" "}
                   <span className="font-medium text-purple-800">
-                    {task.meeting?.title || "會議"}
+                    {task.meeting?.title || t("tasks.meeting")}
                   </span>
                 </>
               ) : (
                 <>
-                  在列表{" "}
+                  {t("tasks.inList")}{" "}
                   <span
                     className="font-medium"
                     style={{ color: COLUMN_THEME[status as TaskColumnId]?.ink }}
                   >
-                    {COLUMN_THEME[status as TaskColumnId]?.name || TASK_STATUS_LABELS[status]}
+                    {taskStatusLabels[status] || COLUMN_THEME[status as TaskColumnId]?.name}
                   </span>
                   {task.case && (
                     <>
@@ -1517,10 +1522,10 @@ function CardModal({
             )}
 
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">描述</h3>
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">{t("tasks.desc")}</h3>
               <textarea
                 className="axon-input min-h-[110px] resize-y"
-                placeholder="加入更詳細的說明…"
+                placeholder={t("tasks.descPh")}
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
                 onBlur={() => onSave(task.id, { instructions })}
@@ -1528,7 +1533,7 @@ function CardModal({
             </section>
 
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-700">檢查清單</h3>
+              <h3 className="mb-2 text-sm font-semibold text-slate-700">{t("tasks.checklist")}</h3>
               <div className="space-y-1.5">
                 {checks.map((item) => (
                   <label
@@ -1561,7 +1566,7 @@ function CardModal({
                 <div className="flex gap-2">
                   <input
                     className="axon-input min-h-0 py-2 text-sm"
-                    placeholder="新增清單項目…"
+                    placeholder={t("tasks.checklistPh")}
                     value={newCheck}
                     onChange={(e) => setNewCheck(e.target.value)}
                     onKeyDown={(e) => {
@@ -1586,7 +1591,7 @@ function CardModal({
                       setNewCheck("");
                     }}
                   >
-                    加入
+                    {t("common.addItem")}
                   </button>
                 </div>
               </div>
@@ -1595,11 +1600,11 @@ function CardModal({
 
           <aside className="space-y-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              加入到卡片
+              {t("tasks.addToCard")}
             </p>
             <label className="block text-xs text-slate-500">
               <span className="mb-1 flex items-center gap-1">
-                <UserRound size={12} /> 成員
+                <UserRound size={12} /> {t("tasks.members")}
               </span>
               <select
                 className="axon-input min-h-0 py-2 text-sm"
@@ -1609,7 +1614,7 @@ function CardModal({
                   onSave(task.id, { assigneeId: e.target.value || null });
                 }}
               >
-                <option value="">未指派</option>
+                <option value="">{t("common.unassigned")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
@@ -1618,7 +1623,7 @@ function CardModal({
               </select>
             </label>
             <div>
-              <div className="mb-1 text-xs text-slate-500">標籤</div>
+              <div className="mb-1 text-xs text-slate-500">{t("tasks.tags")}</div>
               <div className="grid grid-cols-5 gap-1.5">
                 {TASK_LABELS.map((l) => (
                   <button
@@ -1636,7 +1641,7 @@ function CardModal({
               </div>
             </div>
             <div>
-              <div className="mb-1 text-xs text-slate-500">封面顏色</div>
+              <div className="mb-1 text-xs text-slate-500">{t("tasks.cover")}</div>
               <div className="grid grid-cols-5 gap-1.5">
                 {TASK_LABELS.map((l) => (
                   <button
@@ -1657,7 +1662,7 @@ function CardModal({
               </div>
             </div>
             <label className="block text-xs text-slate-500">
-              到期日
+              {t("tasks.dueDate")}
               <input
                 type="date"
                 className="axon-input mt-1 min-h-0 py-2 text-sm"
@@ -1670,7 +1675,7 @@ function CardModal({
             </label>
             {!isMeeting && (
               <label className="block text-xs text-slate-500">
-                移動到
+                {t("tasks.moveTo")}
                 <select
                   className="axon-input mt-1 min-h-0 py-2 text-sm"
                   value={status}
@@ -1681,7 +1686,7 @@ function CardModal({
                 >
                   {TASK_COLUMNS.map((c) => (
                     <option key={c} value={c}>
-                      {COLUMN_THEME[c].name}
+                      {taskStatusLabels[c] || COLUMN_THEME[c].name}
                     </option>
                   ))}
                 </select>
@@ -1689,7 +1694,7 @@ function CardModal({
             )}
             {isMeeting && (
               <label className="block text-xs text-slate-500">
-                完成狀態
+                {t("tasks.doneStatus")}
                 <select
                   className="axon-input mt-1 min-h-0 py-2 text-sm"
                   value={status}
@@ -1698,9 +1703,9 @@ function CardModal({
                     onSave(task.id, { status: e.target.value });
                   }}
                 >
-                  <option value="PENDING">待處理</option>
-                  <option value="IN_PROGRESS">進行中</option>
-                  <option value="DONE">已完成</option>
+                  <option value="PENDING">{taskStatusLabels.PENDING || t("common.pending")}</option>
+                  <option value="IN_PROGRESS">{taskStatusLabels.IN_PROGRESS || t("common.inProgress")}</option>
+                  <option value="DONE">{taskStatusLabels.DONE || t("common.completed")}</option>
                 </select>
               </label>
             )}
@@ -1710,17 +1715,17 @@ function CardModal({
               onClick={() => onSave(task.id, { archived: true })}
             >
               <Archive size={14} />
-              封存
+              {t("tasks.archive")}
             </button>
             <button
               type="button"
               className="axon-btn axon-btn-ghost w-full min-h-9 text-sm text-rose-700"
               onClick={() => {
-                if (window.confirm("永久刪除此卡片？")) onSave(task.id, { delete: true });
+                if (window.confirm(t("tasks.deleteCardConfirm"))) onSave(task.id, { delete: true });
               }}
             >
               <Trash2 size={14} />
-              刪除
+              {t("common.delete")}
             </button>
           </aside>
         </div>

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Copy, Check, Monitor, Smartphone, Wifi, Globe } from "lucide-react";
 import { APP_DEMO_EMAIL, APP_DEMO_PASSWORD, APP_NAME } from "@/lib/brand";
+import { useI18n } from "@/components/I18nProvider";
 
 export default function OpenPage() {
+  const { t } = useI18n();
   const [origin, setOrigin] = useState("");
   const [lanHint, setLanHint] = useState("");
   const [copied, setCopied] = useState("");
@@ -13,13 +15,12 @@ export default function OpenPage() {
   useEffect(() => {
     const o = window.location.origin;
     setOrigin(o);
-    // If opened via localhost, hint LAN from hostname when not local
     if (o.includes("localhost") || o.includes("127.0.0.1")) {
-      setLanHint("同一 Wi‑Fi 下，用本機區網 IP（例如 http://192.168.x.x:3000）開手機／其他電腦");
+      setLanHint(t("open.lanHint.local"));
     } else {
-      setLanHint("目前已是可分享網址，手機與其他電腦直接開啟即可");
+      setLanHint(t("open.lanHint.shared"));
     }
-  }, []);
+  }, [t]);
 
   async function copy(text: string, key: string) {
     try {
@@ -34,14 +35,14 @@ export default function OpenPage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 pb-8">
       <div>
-        <h1 className="axon-title text-2xl font-semibold">如何開啟 {APP_NAME}</h1>
-        <p className="mt-1 text-sm axon-muted">電腦網頁 · 手機網頁 · 手機 App（安裝到主畫面）</p>
+        <h1 className="axon-title text-2xl font-semibold">{t("open.title", { name: APP_NAME })}</h1>
+        <p className="mt-1 text-sm axon-muted">{t("open.subtitle")}</p>
       </div>
 
       <section className="axon-panel space-y-3 p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Globe size={15} />
-          目前網址
+          {t("open.currentUrl")}
         </h2>
         <p className="break-all rounded-xl bg-[var(--axon-sand)] px-3 py-3 text-sm font-medium text-[var(--axon-ink)]">
           {origin || "…"}
@@ -53,7 +54,7 @@ export default function OpenPage() {
           disabled={!origin}
         >
           {copied === "origin" ? <Check size={15} /> : <Copy size={15} />}
-          {copied === "origin" ? "已複製" : "複製網址分享"}
+          {copied === "origin" ? t("open.copied") : t("open.copyUrl")}
         </button>
         <p className="text-xs text-slate-500">{lanHint}</p>
       </section>
@@ -61,47 +62,45 @@ export default function OpenPage() {
       <section className="axon-panel space-y-2 p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Monitor size={15} />
-          電腦穩定版
+          {t("open.desktopTitle")}
         </h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
-          <li>用 Chrome 或 Edge 開啟上方網址</li>
-          <li>登入後建議「釘選分頁」或加入書籤</li>
-          <li>左側選單為完整功能（最適合桌面）</li>
+          <li>{t("open.desktop.1")}</li>
+          <li>{t("open.desktop.2")}</li>
+          <li>{t("open.desktop.3")}</li>
         </ol>
       </section>
 
       <section className="axon-panel space-y-2 p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Smartphone size={15} />
-          手機網頁版
+          {t("open.mobileTitle")}
         </h2>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
-          <li>手機連同一 Wi‑Fi（或使用分享連結）</li>
-          <li>用 Chrome／Safari 開啟同一網址</li>
-          <li>底部五鍵：總覽／收件／分析／事件／任務</li>
+          <li>{t("open.mobile.1")}</li>
+          <li>{t("open.mobile.2")}</li>
+          <li>{t("open.mobile.3")}</li>
         </ol>
       </section>
 
       <section className="axon-panel space-y-2 p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Wifi size={15} />
-          變成手機 App（{APP_NAME}）
+          {t("open.pwaTitle", { name: APP_NAME })}
         </h2>
-        <p className="text-sm text-slate-700">
-          不需上架 App Store。把網頁「加到主畫面」後，圖示名稱就是 {APP_NAME}，全螢幕使用。
-        </p>
+        <p className="text-sm text-slate-700">{t("open.pwaBody", { name: APP_NAME })}</p>
         <Link href="/install" className="axon-btn axon-btn-ok w-full">
-          去安裝 {APP_NAME}
+          {t("open.pwaCta", { name: APP_NAME })}
         </Link>
       </section>
 
       <section className="axon-panel p-5 text-sm text-slate-600">
-        <div className="font-medium text-[var(--axon-ink)]">示範帳號</div>
+        <div className="font-medium text-[var(--axon-ink)]">{t("open.demoAccount")}</div>
         <p className="mt-1">
           {APP_DEMO_EMAIL}／{APP_DEMO_PASSWORD}
         </p>
         <Link href="/login" className="mt-3 inline-flex text-[var(--axon-blue)]">
-          前往登入 →
+          {t("open.goLogin")}
         </Link>
       </section>
     </div>

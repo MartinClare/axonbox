@@ -14,7 +14,7 @@ const plex = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: `${APP_NAME} | 工地行政 AI`,
+  title: `${APP_NAME} | Site Ops AI`,
   description: APP_TAGLINE,
   applicationName: APP_NAME,
   appleWebApp: {

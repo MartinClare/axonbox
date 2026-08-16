@@ -66,6 +66,7 @@ const channelIcon = {
 export default function InboxPage() {
   const router = useRouter();
   const {
+    t,
     channelLabels,
     inboxStatusLabels,
     categoryLabels,
@@ -128,8 +129,8 @@ export default function InboxPage() {
     load();
   }, [load]);
 
-  function flash(t: string) {
-    setMsg(t);
+  function flash(text: string) {
+    setMsg(text);
     setTimeout(() => setMsg(""), 2500);
   }
 
@@ -142,7 +143,7 @@ export default function InboxPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           from: from || "site@demo.com",
-          subject: subject || "現場郵件",
+          subject: subject || t("inbox.siteMail"),
           body: text,
           autoProcess: true,
         }),
@@ -150,10 +151,10 @@ export default function InboxPage() {
       setBusy(false);
       const data = await res.json();
       if (!res.ok) {
-        flash(data.error || "工作流失敗");
+        flash(data.error || t("inbox.workflowFail"));
         return;
       }
-      flash(data.message || "已核准並建立任務");
+      flash(data.message || t("inbox.approvedTask"));
       setText("");
       setSubject("");
       if (data.case?.id) {
@@ -175,13 +176,13 @@ export default function InboxPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      flash("匯入失敗");
+      flash(t("inbox.importFail"));
       return;
     }
     const data = await res.json();
     setText("");
     setSubject("");
-    flash(`已收入並產生建議個案 ${data.count} 則`);
+    flash(t("inbox.imported", { count: data.count }));
     setFilter("ANALYZED");
     setShowImport(false);
     await load();
@@ -210,13 +211,13 @@ export default function InboxPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      flash("分析失敗");
+      flash(t("inbox.analyzeFail"));
       return;
     }
     const data = await res.json();
     setExtract(data.extract);
     setSelected(data.message);
-    flash("AI 分析完成");
+    flash(t("inbox.analyzeOk"));
     await load();
   }
 
@@ -230,11 +231,11 @@ export default function InboxPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      flash("轉事件失敗");
+      flash(t("inbox.toCaseFail"));
       return;
     }
     const data = await res.json();
-    flash("已核准：已建立事件與跟進任務");
+    flash(t("inbox.approvedCase"));
     if (data.case?.id) {
       router.push(`/cases/${data.case.id}`);
       return;
@@ -251,7 +252,7 @@ export default function InboxPage() {
     });
     setSelected(null);
     setExtract(null);
-    flash("已忽略");
+    flash(t("inbox.dismissed"));
     await load();
   }
 
@@ -296,17 +297,17 @@ export default function InboxPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      flash(res.error || "恢復失敗");
+      flash(res.error || t("inbox.restoreFail"));
       return;
     }
     clearSelectionIfGone(ids);
-    flash(`已恢復 ${res.data?.restored || ids.length} 則`);
+    flash(t("inbox.restored", { n: res.data?.restored || ids.length }));
     await load();
   }
 
   async function bulkDelete(ids: string[]) {
     if (ids.length === 0) return;
-    if (!window.confirm(`確定永久刪除 ${ids.length} 則已忽略訊息？此操作無法復原。`)) return;
+    if (!window.confirm(t("inbox.purgeConfirm", { n: ids.length }))) return;
     setBusy(true);
     const res = await apiFetch<{ deleted?: number }>("/api/inbox", {
       method: "PATCH",
@@ -315,24 +316,24 @@ export default function InboxPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      flash(res.error || "刪除失敗");
+      flash(res.error || t("inbox.deleteFail"));
       return;
     }
     clearSelectionIfGone(ids);
-    flash(`已刪除 ${res.data?.deleted || ids.length} 則`);
+    flash(t("inbox.deleted", { n: res.data?.deleted || ids.length }));
     await load();
   }
 
   async function copyAddress() {
     if (!inbound?.address) return;
     await navigator.clipboard.writeText(inbound.address);
-    flash("已複製，請貼到郵件 To");
+    flash(t("inbox.copiedEmail"));
   }
 
   async function copyWhatsAppNumber() {
     if (!inbound?.whatsappNumber) return;
     await navigator.clipboard.writeText(inbound.whatsappNumber);
-    flash("已複製 WhatsApp 號碼");
+    flash(t("inbox.copiedWa"));
   }
 
   async function syncMail() {
@@ -341,10 +342,10 @@ export default function InboxPage() {
     setBusy(false);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      flash(data.error || "收取失敗");
+      flash(data.error || t("inbox.fetchFail"));
       return;
     }
-    flash(`已收取 ${data.pulled || 0} 封，建議個案 ${data.proposed || 0} 則`);
+    flash(t("inbox.fetched", { pulled: data.pulled || 0, proposed: data.proposed || 0 }));
     setFilter("ANALYZED");
     await load();
   }
@@ -352,12 +353,12 @@ export default function InboxPage() {
   async function onPickMinutes(file: File | null) {
     if (!file) return;
     setBusy(true);
-    setMinutesProgress({ pct: 4, label: "開始處理…" });
+    setMinutesProgress({ pct: 4, label: t("inbox.startProcess") });
     try {
       const data = await uploadMinutesPreview(file, setMinutesProgress, {
         outputLang: minutesLang,
       });
-      setMinutesProgress({ pct: 100, label: "完成，前往分析…" });
+      setMinutesProgress({ pct: 100, label: t("inbox.gotoAnalyze") });
       await new Promise((r) => setTimeout(r, 280));
       stashMinutesPreview({
         title: data.title,
@@ -370,7 +371,7 @@ export default function InboxPage() {
       });
       router.push("/tasks?minutesPreview=1");
     } catch (err) {
-      flash(err instanceof Error ? err.message : "會議紀錄上傳失敗");
+      flash(err instanceof Error ? err.message : t("inbox.minutesFail"));
     } finally {
       setBusy(false);
       setMinutesProgress(null);
@@ -378,19 +379,19 @@ export default function InboxPage() {
   }
 
   const filters = [
-    ["待核准", counts.analyzed, "ANALYZED"],
-    ["待分析", counts.pending, "PENDING"],
-    ["已建任務", counts.processed, "PROCESSED"],
-    ["已忽略", counts.dismissed, "DISMISSED"],
+    [t("inbox.pendingApprove"), counts.analyzed, "ANALYZED"],
+    [t("inbox.pendingAnalyze"), counts.pending, "PENDING"],
+    [t("inbox.taskCreated"), counts.processed, "PROCESSED"],
+    [t("inbox.dismissed"), counts.dismissed, "DISMISSED"],
   ] as const;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="axon-title text-2xl font-semibold">訊息收件</h1>
+          <h1 className="axon-title text-2xl font-semibold">{t("inbox.title")}</h1>
           <p className="mt-1 text-sm axon-muted">
-            轉寄郵件或 WhatsApp 到專用入口 → AI 建議個案 → 核准後建立任務
+            {t("inbox.subtitle")}
           </p>
         </div>
         {msg && (
@@ -401,15 +402,15 @@ export default function InboxPage() {
       <section className="axon-panel space-y-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-[var(--axon-ink)]">你的轉寄地址</div>
+            <div className="text-sm font-semibold text-[var(--axon-ink)]">{t("inbox.forwardTitle")}</div>
             <p className="mt-1 text-xs text-slate-500">
-              把這組地址貼到郵件的 To。@ 前是你的保密代號，不要外傳或改用容易猜的名稱。
+              {t("inbox.forwardHint")}
             </p>
           </div>
           {(inbound?.imapConfigured || inbound?.resendConfigured) && (
             <button disabled={busy} onClick={syncMail} className="axon-btn axon-btn-ghost">
               {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              收取新郵件
+              {t("inbox.fetchMail")}
             </button>
           )}
         </div>
@@ -420,20 +421,20 @@ export default function InboxPage() {
             </code>
             <button type="button" onClick={copyAddress} className="axon-btn axon-btn-ghost">
               <Copy size={14} />
-              複製
+              {t("common.copy")}
             </button>
           </div>
         ) : (
-          <p className="text-sm text-amber-700">尚未設定轉寄信箱。請到人員名冊確認你的專屬代號。</p>
+          <p className="text-sm text-amber-700">{t("inbox.forwardEmpty")}</p>
         )}
       </section>
 
       {inbound?.whatsappConfigured && (
         <section className="axon-panel space-y-3 p-5">
           <div>
-            <div className="text-sm font-semibold text-[var(--axon-ink)]">場務 WhatsApp 收件</div>
+            <div className="text-sm font-semibold text-[var(--axon-ink)]">{t("inbox.waTitle")}</div>
             <p className="mt-1 text-xs text-slate-500">
-              把對話、照片、PDF 或語音轉發到這個號碼。連續傳送會合成一則；傳「以下是另一個案」可立刻開新事件。
+              {t("inbox.waHint")}
             </p>
           </div>
           {inbound.whatsappNumber ? (
@@ -443,12 +444,12 @@ export default function InboxPage() {
               </code>
               <button type="button" onClick={copyWhatsAppNumber} className="axon-btn axon-btn-ghost">
                 <Copy size={14} />
-                複製
+                {t("common.copy")}
               </button>
             </div>
           ) : (
             <p className="text-sm text-amber-700">
-              已接上 YCloud，請在環境變數設定 WHATSAPP_DISPLAY_NUMBER 以便顯示號碼。
+              {t("inbox.waNumberMissing")}
             </p>
           )}
         </section>
@@ -479,7 +480,7 @@ export default function InboxPage() {
               onClick={() => setShowImport((v) => !v)}
               className="flex w-full items-center justify-between px-4 py-3 text-left"
             >
-              <span className="text-sm font-semibold text-[var(--axon-ink)]">快速匯入</span>
+              <span className="text-sm font-semibold text-[var(--axon-ink)]">{t("inbox.quickImport")}</span>
               <ChevronDown
                 size={16}
                 className={cn("text-slate-400 transition", showImport && "rotate-180")}
@@ -526,10 +527,10 @@ export default function InboxPage() {
                     disabled={busy}
                     onClick={() => minutesFileRef.current?.click()}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-violet-900 ring-1 ring-violet-200 transition hover:bg-violet-50 disabled:opacity-50"
-                    title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
+                    title={t("inbox.minutesHint")}
                   >
                     <FileUp size={14} />
-                    {busy && minutesProgress ? "處理中…" : "上傳檔案"}
+                    {busy && minutesProgress ? t("common.processing") : t("inbox.uploadFile")}
                   </button>
                 </MinutesUploadGroup>
 
@@ -537,13 +538,13 @@ export default function InboxPage() {
                   <div className="grid gap-2 sm:grid-cols-2">
                     <input
                       className="axon-input"
-                      placeholder={channel === "EMAIL" ? "寄件人電郵（可選）" : "發送人（可選）"}
+                      placeholder={channel === "EMAIL" ? t("inbox.senderEmail") : t("inbox.senderName")}
                       value={from}
                       onChange={(e) => setFrom(e.target.value)}
                     />
                     <input
                       className="axon-input"
-                      placeholder="主旨（可選）"
+                      placeholder={t("inbox.subject")}
                       value={subject}
                       onChange={(e) => setSubject(e.target.value)}
                     />
@@ -554,8 +555,8 @@ export default function InboxPage() {
                   className="axon-input min-h-[110px] resize-y"
                   placeholder={
                     channel === "WHATSAPP"
-                      ? "[10:21] 現場主管：B區五樓圍欄未裝"
-                      : "貼上郵件正文或現場說明…"
+                      ? t("capture.chatPh")
+                      : t("inbox.pastePh")
                   }
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -567,7 +568,7 @@ export default function InboxPage() {
                   className="axon-btn axon-btn-primary w-full"
                 >
                   {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  收入收件箱
+                  {t("inbox.ingest")}
                 </button>
                 {channel === "EMAIL" && (
                   <button
@@ -576,7 +577,7 @@ export default function InboxPage() {
                     className="axon-btn axon-btn-ok w-full"
                   >
                     <Sparkles size={15} />
-                    略過核准，直接建任務
+                    {t("inbox.skipApprove")}
                   </button>
                 )}
               </div>
@@ -585,7 +586,7 @@ export default function InboxPage() {
 
           <section className="axon-panel overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--axon-line)] px-4 py-3">
-              <div className="text-sm font-semibold">收件列表</div>
+              <div className="text-sm font-semibold">{t("inbox.list")}</div>
               {filter === "DISMISSED" && rows.length > 0 && (
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500">
                   <input
@@ -593,13 +594,13 @@ export default function InboxPage() {
                     checked={rows.length > 0 && rows.every((r) => checked.has(r.id))}
                     onChange={(e) => toggleAll(e.target.checked)}
                   />
-                  全選
+                  {t("common.selectAll")}
                 </label>
               )}
             </div>
             {filter === "DISMISSED" && checked.size > 0 && (
               <div className="flex flex-wrap items-center gap-2 border-b border-[var(--axon-line)] bg-slate-50/80 px-4 py-2.5">
-                <span className="mr-auto text-xs text-slate-500">已選 {checked.size} 則</span>
+                <span className="mr-auto text-xs text-slate-500">{t("inbox.selected", { n: checked.size })}</span>
                 <button
                   type="button"
                   disabled={busy}
@@ -607,7 +608,7 @@ export default function InboxPage() {
                   className="axon-btn axon-btn-ghost min-h-9 px-3 py-1.5 text-xs"
                 >
                   <Undo2 size={13} />
-                  恢復
+                  {t("inbox.restore")}
                 </button>
                 <button
                   type="button"
@@ -616,13 +617,13 @@ export default function InboxPage() {
                   className="axon-btn axon-btn-ghost min-h-9 px-3 py-1.5 text-xs text-rose-700"
                 >
                   <Trash2 size={13} />
-                  刪除
+                  {t("common.delete")}
                 </button>
               </div>
             )}
             <div className="max-h-[460px] divide-y divide-slate-100 overflow-y-auto">
               {rows.length === 0 && (
-                <p className="px-4 py-10 text-center text-sm text-slate-400">暫無訊息</p>
+                <p className="px-4 py-10 text-center text-sm text-slate-400">{t("inbox.empty")}</p>
               )}
               {rows.map((row) => {
                 const Icon = channelIcon[row.channel as keyof typeof channelIcon] || Inbox;
@@ -683,10 +684,10 @@ export default function InboxPage() {
             <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
               <Inbox size={22} className="mb-3 text-slate-300" />
               <p className="text-sm font-medium text-slate-600">
-                {filter === "DISMISSED" ? "選一則已忽略訊息，或勾選後批量處理" : "選一則建議個案開始核准"}
+                {filter === "DISMISSED" ? t("inbox.pickDismissed") : t("inbox.pickAnalyzed")}
               </p>
               <p className="axon-muted mt-1 text-xs">
-                {filter === "DISMISSED" ? "可恢復回待核准，或永久刪除" : "核准後會建立事件與跟進任務"}
+                {filter === "DISMISSED" ? t("inbox.dismissedHint") : t("inbox.approveHint")}
               </p>
             </div>
           ) : (
@@ -724,7 +725,7 @@ export default function InboxPage() {
                       className="axon-btn axon-btn-primary"
                     >
                       <Undo2 size={14} />
-                      恢復
+                      {t("inbox.restore")}
                     </button>
                     <button
                       disabled={busy}
@@ -732,22 +733,22 @@ export default function InboxPage() {
                       className="axon-btn axon-btn-ghost text-rose-700 sm:col-span-2"
                     >
                       <Trash2 size={14} />
-                      永久刪除
+                      {t("inbox.purge")}
                     </button>
                   </>
                 ) : (
                   <>
                     <button disabled={busy} onClick={analyze} className="axon-btn axon-btn-primary">
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      AI 分析
+                      {t("inbox.analyze")}
                     </button>
                     <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
                       <CheckCircle2 size={14} />
-                      核准並建立任務
+                      {t("inbox.approve")}
                     </button>
                     <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
                       <Trash2 size={14} />
-                      忽略
+                      {t("inbox.dismiss")}
                     </button>
                   </>
                 )}
@@ -758,7 +759,7 @@ export default function InboxPage() {
                   onClick={() => router.push(`/cases/${selected.case!.id}`)}
                   className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-left text-sm text-emerald-800"
                 >
-                  已關聯事件 {selected.case.caseNo} · {selected.case.title}
+                  {t("inbox.linkedCase", { caseNo: selected.case.caseNo, title: selected.case.title })}
                 </button>
               )}
 
@@ -776,9 +777,9 @@ export default function InboxPage() {
                   <p className="text-sm text-slate-600">
                     {extract.siteSummary || extract.description}
                   </p>
-                  <div className="text-xs text-slate-500">位置：{extract.location}</div>
+                  <div className="text-xs text-slate-500">{t("inbox.location", { loc: extract.location })}</div>
                   <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-slate-700">
-                    <span className="text-xs text-slate-400">建議動作</span>
+                    <span className="text-xs text-slate-400">{t("inbox.suggestedActions")}</span>
                     <div className="mt-1">{extract.recommendation}</div>
                   </div>
                 </div>

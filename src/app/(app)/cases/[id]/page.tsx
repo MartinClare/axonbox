@@ -5,9 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Timeline } from "@/components/Timeline";
 import {
-  CATEGORY_LABELS,
-  CASE_STATUS_LABELS,
-  SEVERITY_LABELS,
   STATUS_COLORS,
   CATEGORY_COLORS,
   cn,
@@ -18,11 +15,12 @@ import { mediaUrl } from "@/lib/media";
 import { apiFetch, asArray } from "@/lib/api-client";
 import { hasAfterEvidence, parseEvidenceTags, tagsIncludeAfter } from "@/lib/case-closeout";
 import {
-  CASE_LOOP_SUBTITLE,
+  caseLoopSubtitle,
   getCaseLoopState,
   type CaseLoopNextAction,
 } from "@/lib/case-loop";
 import { CaseLoopNextPanel, CaseLoopStepper } from "@/components/CaseLoopStepper";
+import { useI18n } from "@/components/I18nProvider";
 
 type CaseDetail = {
   id: string;
@@ -63,6 +61,7 @@ type CaseDetail = {
 };
 
 export default function CaseDetailPage() {
+  const { t, locale, categoryLabels, severityLabels, caseStatusLabels } = useI18n();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [item, setItem] = useState<CaseDetail | null>(null);
@@ -77,6 +76,7 @@ export default function CaseDetailPage() {
   });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [msgErr, setMsgErr] = useState(false);
   const [waiveOpen, setWaiveOpen] = useState(false);
   const [waiveNote, setWaiveNote] = useState("");
   const [editing, setEditing] = useState(false);
@@ -91,6 +91,11 @@ export default function CaseDetailPage() {
     assigneeId: "",
     subcontractorId: "",
   });
+
+  function flash(text: string, err = false) {
+    setMsg(text);
+    setMsgErr(err);
+  }
 
   function syncEditFromCase(c: CaseDetail) {
     setEdit({
@@ -115,7 +120,7 @@ export default function CaseDetailPage() {
     ]);
     if (!cRes.ok || !cRes.data || typeof cRes.data !== "object" || !("id" in cRes.data)) {
       setItem(null);
-      setMsg(cRes.ok ? "找不到事件" : cRes.error);
+      flash(cRes.ok ? t("case.notFound") : cRes.error, true);
       return;
     }
     const c = cRes.data;
@@ -151,7 +156,7 @@ export default function CaseDetailPage() {
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
-    setMsg("");
+    flash("");
     const res = await fetch(`/api/cases/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -160,10 +165,10 @@ export default function CaseDetailPage() {
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(data.message || data.error || "操作失敗");
+      flash(data.message || data.error || t("common.failed"), true);
       return false;
     }
-    setMsg("已更新");
+    flash(t("common.updated"));
     await load();
     router.refresh();
     return true;
@@ -173,20 +178,20 @@ export default function CaseDetailPage() {
     if (!item) return;
     if (!afterReady) {
       setWaiveOpen(true);
-      setMsg("尚未有整改後證據：請先標記附件，或填寫原因後無圖關閉");
+      flash(t("case.needAfter"), true);
       return;
     }
     await patch({
       status: "CLOSED",
       eventType: "CLOSE",
-      eventNote: "核驗通過，事件關閉",
+      eventNote: t("case.closeNote"),
     });
   }
 
   async function confirmWaiveClose() {
     const note = waiveNote.trim();
     if (!note) {
-      setMsg("請填寫無圖關閉原因");
+      flash(t("case.needWaiveNote"), true);
       return;
     }
     const ok = await patch({
@@ -208,16 +213,16 @@ export default function CaseDetailPage() {
 
   async function downloadPack() {
     setBusy(true);
-    setMsg("");
+    flash("");
     const res = await fetch(`/api/cases/${id}/pack`);
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(data.error || "結案摘要產生失敗");
+      flash(data.error || t("case.packFail"), true);
       return;
     }
     if (data.filePath) window.open(data.filePath, "_blank");
-    setMsg("已產生結案摘要 PDF");
+    flash(t("case.packOk"));
   }
 
   async function markAfter(evidenceId: string) {
@@ -229,10 +234,10 @@ export default function CaseDetailPage() {
     });
     setBusy(false);
     if (!res.ok) {
-      setMsg("標記失敗");
+      flash(t("case.markAfterFail"), true);
       return;
     }
-    setMsg("已標記為整改後");
+    flash(t("case.markAfterOk"));
     await load();
   }
 
@@ -240,18 +245,18 @@ export default function CaseDetailPage() {
     if (!item) return;
     if (
       !window.confirm(
-        `確定刪除事件 ${item.caseNo}？\n「${item.title}」\n相關任務與日誌會一併刪除；附件會保留但取消關聯。`,
+        t("case.deleteConfirm", { caseNo: item.caseNo, title: item.title }),
       )
     ) {
       return;
     }
     setBusy(true);
-    setMsg("");
+    flash("");
     const res = await fetch(`/api/cases/${id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setMsg(data.error || "刪除失敗");
+      flash(data.error || t("case.deleteFail"), true);
       return;
     }
     router.push("/cases");
@@ -261,7 +266,7 @@ export default function CaseDetailPage() {
   async function saveEdit() {
     const title = edit.title.trim();
     if (!title) {
-      setMsg("請填寫標題");
+      flash(t("case.needTitle"), true);
       return;
     }
     const ok = await patch({
@@ -269,13 +274,13 @@ export default function CaseDetailPage() {
       description: edit.description.trim(),
       category: edit.category,
       severity: edit.severity,
-      location: edit.location.trim() || "待確認",
+      location: edit.location.trim() || t("case.locationPending"),
       recommendation: edit.recommendation.trim() || null,
       dueAt: edit.dueAt || null,
       assigneeId: edit.assigneeId || null,
       subcontractorId: edit.subcontractorId || null,
       eventType: "EDIT",
-      eventNote: "更新事件資料",
+      eventNote: t("case.editNote"),
     });
     if (ok) {
       setEditing(false);
@@ -286,23 +291,23 @@ export default function CaseDetailPage() {
         dueAt: edit.dueAt,
         instructions: edit.recommendation || a.instructions,
       }));
-      setMsg("已儲存修改");
+      flash(t("case.saved"));
     }
   }
 
   function cancelEdit() {
     if (item) syncEditFromCase(item);
     setEditing(false);
-    setMsg("");
+    flash("");
   }
 
   if (!item) {
     return (
       <div className="space-y-3 py-10 text-center">
-        <p className="text-sm text-slate-500">{msg || "載入中…"}</p>
+        <p className="text-sm text-slate-500">{msg || t("case.loading")}</p>
         {msg && (
           <Link href="/cases" className="axon-btn axon-btn-ghost inline-flex">
-            返回事件列表
+            {t("case.backList")}
           </Link>
         )}
       </div>
@@ -319,17 +324,20 @@ export default function CaseDetailPage() {
     ),
   );
 
-  const loop = getCaseLoopState({
-    status: item.status,
-    assigneeId: item.assigneeId || item.assignee?.id,
-    subcontractorId: item.subcontractorId || item.subcontractor?.id,
-    evidence: item.evidence.map((e) => ({
-      id: e.id,
-      createdAt: e.createdAt || item.discoveredAt,
-      tagsJson: e.tagsJson,
-    })),
-    events: item.events,
-  });
+  const loop = getCaseLoopState(
+    {
+      status: item.status,
+      assigneeId: item.assigneeId || item.assignee?.id,
+      subcontractorId: item.subcontractorId || item.subcontractor?.id,
+      evidence: item.evidence.map((e) => ({
+        id: e.id,
+        createdAt: e.createdAt || item.discoveredAt,
+        tagsJson: e.tagsJson,
+      })),
+      events: item.events,
+    },
+    locale,
+  );
 
   function handleLoopAction(action: CaseLoopNextAction) {
     if (action === "assign") {
@@ -341,7 +349,7 @@ export default function CaseDetailPage() {
     }
     if (action === "after_proof") {
       setTab("files");
-      setMsg("請在附件標記「整改後」照片");
+      flash(t("case.markAfterHint"), true);
       return;
     }
     if (action === "close") {
@@ -364,23 +372,25 @@ export default function CaseDetailPage() {
               className="mt-1 w-full max-w-2xl rounded-lg border border-slate-200 px-3 py-2 text-xl font-semibold text-[var(--axon-navy)]"
               value={edit.title}
               onChange={(e) => setEdit({ ...edit, title: e.target.value })}
-              placeholder="事件標題"
+              placeholder={t("case.titlePh")}
             />
           ) : (
             <h1 className="text-2xl font-semibold text-[var(--axon-navy)]">{item.title}</h1>
           )}
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <span className={cn("rounded px-2 py-0.5", CATEGORY_COLORS[item.category])}>
-              {CATEGORY_LABELS[item.category]}
+              {categoryLabels[item.category] || item.category}
             </span>
             <span className={cn("rounded-full px-2 py-0.5", STATUS_COLORS[item.status])}>
-              {CASE_STATUS_LABELS[item.status]}
+              {caseStatusLabels[item.status] || item.status}
             </span>
             <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
-              嚴重度：{SEVERITY_LABELS[item.severity]}
+              {t("case.severityLabel", {
+                label: severityLabels[item.severity] || item.severity,
+              })}
             </span>
             <span className="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
-              已開 {openDays} 天
+              {t("case.openDays", { n: openDays })}
             </span>
             {remain !== null && item.status !== "CLOSED" && (
               <span
@@ -389,14 +399,20 @@ export default function CaseDetailPage() {
                   remain < 0 ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700",
                 )}
               >
-                {remain < 0 ? `逾期 ${Math.abs(remain)} 天` : `剩餘 ${remain} 天`}
+                {remain < 0
+                  ? t("common.overdueDays", { n: Math.abs(remain) })
+                  : t("common.remainDaysLong", { n: remain })}
               </span>
             )}
             {afterReady ? (
-              <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">已有整改後證據</span>
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">
+                {t("case.afterReady")}
+              </span>
             ) : (
               item.status !== "CLOSED" && (
-                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-800">尚無整改後證據</span>
+                <span className="rounded bg-amber-50 px-2 py-0.5 text-amber-800">
+                  {t("case.afterMissing")}
+                </span>
               )
             )}
           </div>
@@ -413,7 +429,7 @@ export default function CaseDetailPage() {
               }}
               className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
             >
-              編輯
+              {t("case.edit")}
             </button>
           ) : (
             <>
@@ -423,7 +439,7 @@ export default function CaseDetailPage() {
                 onClick={saveEdit}
                 className="rounded-lg bg-[var(--axon-blue)] px-4 py-2 text-sm text-white disabled:opacity-50"
               >
-                儲存
+                {t("case.save")}
               </button>
               <button
                 type="button"
@@ -431,7 +447,7 @@ export default function CaseDetailPage() {
                 onClick={cancelEdit}
                 className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
               >
-                取消
+                {t("case.cancel")}
               </button>
             </>
           )}
@@ -440,13 +456,13 @@ export default function CaseDetailPage() {
             disabled={busy}
             className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
           >
-            結案摘要
+            {t("case.pack")}
           </button>
           <button
             onClick={downloadArchive}
             className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
           >
-            下載全部證據
+            {t("case.downloadAll")}
           </button>
           <button
             type="button"
@@ -454,7 +470,7 @@ export default function CaseDetailPage() {
             onClick={deleteCase}
             className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700 hover:bg-rose-100 disabled:opacity-50"
           >
-            刪除事件
+            {t("case.delete")}
           </button>
         </div>
       </div>
@@ -462,8 +478,8 @@ export default function CaseDetailPage() {
       <div className="space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--axon-navy)]">監督迴圈</h2>
-            <p className="text-xs text-slate-500">{CASE_LOOP_SUBTITLE}</p>
+            <h2 className="text-sm font-semibold text-[var(--axon-navy)]">{t("loop.title")}</h2>
+            <p className="text-xs text-slate-500">{caseLoopSubtitle(locale)}</p>
           </div>
         </div>
         <CaseLoopStepper steps={loop.steps} />
@@ -473,12 +489,12 @@ export default function CaseDetailPage() {
       <div className="flex gap-2 border-b border-slate-200">
         {(
           [
-            ["details", "詳情"],
-            ["progress", "進度"],
-            ["files", "附件"],
-            ["logs", "日誌"],
+            ["details", "case.tab.details"],
+            ["progress", "case.tab.progress"],
+            ["files", "case.tab.files"],
+            ["logs", "case.tab.logs"],
           ] as const
-        ).map(([k, label]) => (
+        ).map(([k, key]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -489,7 +505,7 @@ export default function CaseDetailPage() {
                 : "border-transparent text-slate-500",
             )}
           >
-            {label}
+            {t(key)}
           </button>
         ))}
       </div>
@@ -498,22 +514,24 @@ export default function CaseDetailPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">事件資訊</h2>
+              <h2 className="text-sm font-semibold">{t("case.info")}</h2>
               {editing && (
-                <span className="text-[11px] font-medium text-[var(--axon-blue)]">編輯中</span>
+                <span className="text-[11px] font-medium text-[var(--axon-blue)]">
+                  {t("case.editing")}
+                </span>
               )}
             </div>
             {editing ? (
               <div className="space-y-3">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="text-xs text-slate-500">
-                    分類
+                    {t("common.category")}
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       value={edit.category}
                       onChange={(e) => setEdit({ ...edit, category: e.target.value })}
                     >
-                      {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                      {Object.entries(categoryLabels).map(([k, v]) => (
                         <option key={k} value={k}>
                           {v}
                         </option>
@@ -521,13 +539,13 @@ export default function CaseDetailPage() {
                     </select>
                   </label>
                   <label className="text-xs text-slate-500">
-                    嚴重度
+                    {t("common.severity")}
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       value={edit.severity}
                       onChange={(e) => setEdit({ ...edit, severity: e.target.value })}
                     >
-                      {Object.entries(SEVERITY_LABELS).map(([k, v]) => (
+                      {Object.entries(severityLabels).map(([k, v]) => (
                         <option key={k} value={k}>
                           {v}
                         </option>
@@ -536,7 +554,7 @@ export default function CaseDetailPage() {
                   </label>
                 </div>
                 <label className="block text-xs text-slate-500">
-                  位置
+                  {t("common.location")}
                   <input
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     value={edit.location}
@@ -545,13 +563,13 @@ export default function CaseDetailPage() {
                 </label>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="text-xs text-slate-500">
-                    負責人
+                    {t("common.assignee")}
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       value={edit.assigneeId}
                       onChange={(e) => setEdit({ ...edit, assigneeId: e.target.value })}
                     >
-                      <option value="">未指派</option>
+                      <option value="">{t("common.unassigned")}</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.name}
@@ -560,13 +578,13 @@ export default function CaseDetailPage() {
                     </select>
                   </label>
                   <label className="text-xs text-slate-500">
-                    分判
+                    {t("common.subcontractor")}
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       value={edit.subcontractorId}
                       onChange={(e) => setEdit({ ...edit, subcontractorId: e.target.value })}
                     >
-                      <option value="">未指定</option>
+                      <option value="">{t("common.unspecified")}</option>
                       {subs.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
@@ -576,7 +594,7 @@ export default function CaseDetailPage() {
                   </label>
                 </div>
                 <label className="block text-xs text-slate-500">
-                  期限
+                  {t("common.due")}
                   <input
                     type="date"
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
@@ -585,7 +603,7 @@ export default function CaseDetailPage() {
                   />
                 </label>
                 <label className="block text-xs text-slate-500">
-                  說明
+                  {t("common.description")}
                   <textarea
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     rows={4}
@@ -594,7 +612,7 @@ export default function CaseDetailPage() {
                   />
                 </label>
                 <label className="block text-xs text-slate-500">
-                  建議／整改指示
+                  {t("case.recommendation")}
                   <textarea
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     rows={3}
@@ -602,7 +620,9 @@ export default function CaseDetailPage() {
                     onChange={(e) => setEdit({ ...edit, recommendation: e.target.value })}
                   />
                 </label>
-                <p className="text-xs text-slate-400">發現時間：{formatDate(item.discoveredAt)}（不可改）</p>
+                <p className="text-xs text-slate-400">
+                  {t("case.discoveredFixed", { date: formatDate(item.discoveredAt) })}
+                </p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     type="button"
@@ -610,7 +630,7 @@ export default function CaseDetailPage() {
                     onClick={saveEdit}
                     className="rounded-lg bg-[var(--axon-blue)] px-4 py-2 text-sm text-white disabled:opacity-50"
                   >
-                    儲存修改
+                    {t("case.saveEdit")}
                   </button>
                   <button
                     type="button"
@@ -618,7 +638,7 @@ export default function CaseDetailPage() {
                     onClick={cancelEdit}
                     className="rounded-lg border px-4 py-2 text-sm"
                   >
-                    取消
+                    {t("case.cancel")}
                   </button>
                 </div>
               </div>
@@ -626,30 +646,30 @@ export default function CaseDetailPage() {
               <>
                 <dl className="space-y-2 text-sm">
                   <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">位置</dt>
+                    <dt className="text-slate-500">{t("common.location")}</dt>
                     <dd>{item.location}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">發現時間</dt>
+                    <dt className="text-slate-500">{t("common.discoveredAt")}</dt>
                     <dd>{formatDate(item.discoveredAt)}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">負責人</dt>
-                    <dd>{item.assignee?.name || "—"}</dd>
+                    <dt className="text-slate-500">{t("common.assignee")}</dt>
+                    <dd>{item.assignee?.name || t("common.none")}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">分判</dt>
-                    <dd>{item.subcontractor?.name || "—"}</dd>
+                    <dt className="text-slate-500">{t("common.subcontractor")}</dt>
+                    <dd>{item.subcontractor?.name || t("common.none")}</dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-slate-500">項目</dt>
+                    <dt className="text-slate-500">{t("case.project")}</dt>
                     <dd>{item.project.name}</dd>
                   </div>
                 </dl>
                 <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
                 {item.recommendation && (
                   <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
-                    建議：{item.recommendation}
+                    {t("case.recPrefix", { text: item.recommendation })}
                   </p>
                 )}
               </>
@@ -657,14 +677,14 @@ export default function CaseDetailPage() {
           </section>
 
           <section id="case-loop-assign" className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold">步驟 2：指派分判</h2>
+            <h2 className="mb-3 text-sm font-semibold">{t("case.step2")}</h2>
             <div className="space-y-3">
               <select
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 value={assign.subcontractorId}
                 onChange={(e) => setAssign({ ...assign, subcontractorId: e.target.value })}
               >
-                <option value="">選擇分判商</option>
+                <option value="">{t("case.pickSub")}</option>
                 {subs.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -676,7 +696,7 @@ export default function CaseDetailPage() {
                 value={assign.assigneeId}
                 onChange={(e) => setAssign({ ...assign, assigneeId: e.target.value })}
               >
-                <option value="">選擇負責人</option>
+                <option value="">{t("case.pickAssignee")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name}
@@ -692,7 +712,7 @@ export default function CaseDetailPage() {
               <textarea
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 rows={3}
-                placeholder="整改指示"
+                placeholder={t("case.instructionsPh")}
                 value={assign.instructions}
                 onChange={(e) => setAssign({ ...assign, instructions: e.target.value })}
               />
@@ -702,7 +722,7 @@ export default function CaseDetailPage() {
                   patch({
                     status: "ASSIGNED",
                     eventType: "ASSIGN",
-                    eventNote: `已發送指示給分判`,
+                    eventNote: t("case.assignNote"),
                     subcontractorId: assign.subcontractorId || null,
                     assigneeId: assign.assigneeId || null,
                     dueAt: assign.dueAt || null,
@@ -711,25 +731,27 @@ export default function CaseDetailPage() {
                 }
                 className="w-full rounded-lg bg-[var(--axon-blue)] py-2 text-sm text-white disabled:opacity-50"
               >
-                發送指示 / 指派
+                {t("case.sendAssign")}
               </button>
             </div>
           </section>
 
           <section id="case-loop-close" className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
-            <h2 className="mb-3 text-sm font-semibold">步驟 4：核驗結案</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              步驟 3 請到「附件」標記整改後證據；完成後即可核驗關閉。
-            </p>
+            <h2 className="mb-3 text-sm font-semibold">{t("case.step4")}</h2>
+            <p className="mb-3 text-xs text-slate-500">{t("case.step4Hint")}</p>
             <div className="flex flex-wrap gap-2">
               <button
                 disabled={busy}
                 onClick={() =>
-                  patch({ status: "IN_PROGRESS", eventType: "PROGRESS", eventNote: "開始整改" })
+                  patch({
+                    status: "IN_PROGRESS",
+                    eventType: "PROGRESS",
+                    eventNote: t("case.progressStart"),
+                  })
                 }
                 className="rounded-lg border px-3 py-2 text-sm"
               >
-                標記進行中
+                {t("case.markProgress")}
               </button>
               <button
                 disabled={busy}
@@ -737,37 +759,35 @@ export default function CaseDetailPage() {
                   patch({
                     status: "PENDING_REVIEW",
                     eventType: "REVIEW",
-                    eventNote: "提交核驗",
+                    eventNote: t("case.reviewNote"),
                   })
                 }
                 className="rounded-lg border px-3 py-2 text-sm"
               >
-                提交核驗
+                {t("case.submitReview")}
               </button>
               <button
                 disabled={busy || item.status === "CLOSED"}
                 onClick={tryClose}
                 className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"
               >
-                核驗通過並關閉
+                {t("case.closePass")}
               </button>
               <button
                 disabled={busy}
                 onClick={downloadPack}
                 className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
               >
-                下載結案摘要
+                {t("case.downloadPack")}
               </button>
             </div>
             {waiveOpen && item.status !== "CLOSED" && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className="text-xs text-amber-900">
-                  尚無整改後證據。請到「附件」標記整改後照片，或填寫原因後無圖關閉。
-                </p>
+                <p className="text-xs text-amber-900">{t("case.waiveHint")}</p>
                 <textarea
                   className="mt-2 w-full rounded-lg border border-amber-200 px-3 py-2 text-sm"
                   rows={2}
-                  placeholder="無圖關閉原因（必填）"
+                  placeholder={t("case.waivePh")}
                   value={waiveNote}
                   onChange={(e) => setWaiveNote(e.target.value)}
                 />
@@ -778,7 +798,7 @@ export default function CaseDetailPage() {
                     onClick={confirmWaiveClose}
                     className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs text-white"
                   >
-                    無圖關閉
+                    {t("case.waiveClose")}
                   </button>
                   <button
                     type="button"
@@ -788,20 +808,20 @@ export default function CaseDetailPage() {
                     }}
                     className="rounded-lg border px-3 py-1.5 text-xs"
                   >
-                    去標記附件
+                    {t("case.goFiles")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setWaiveOpen(false)}
                     className="rounded-lg px-3 py-1.5 text-xs text-slate-500"
                   >
-                    取消
+                    {t("case.cancel")}
                   </button>
                 </div>
               </div>
             )}
             {msg && (
-              <p className={cn("mt-2 text-sm", msg.includes("失敗") || msg.includes("請") ? "text-rose-600" : "text-emerald-600")}>
+              <p className={cn("mt-2 text-sm", msgErr ? "text-rose-600" : "text-emerald-600")}>
                 {msg}
               </p>
             )}
@@ -818,11 +838,9 @@ export default function CaseDetailPage() {
       {tab === "files" && (
         <section className="space-y-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-            <h2 className="text-sm font-semibold">步驟 3：整改後證據</h2>
+            <h2 className="text-sm font-semibold">{t("case.step3")}</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              {afterReady
-                ? "已有整改後證據，可進行核驗結案。"
-                : "請將整改完成後的照片標記為「整改後」，才可關閉事件。"}
+              {afterReady ? t("case.step3Ready") : t("case.step3Need")}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -838,10 +856,10 @@ export default function CaseDetailPage() {
                   <img src={href!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
                 ) : (
                   <div className="mb-2 flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 text-center text-xs text-slate-500">
-                    <span>{e.type === "CHAT" ? "郵件正文" : e.mime || e.type}</span>
+                    <span>{e.type === "CHAT" ? t("case.emailBody") : e.mime || e.type}</span>
                     {href && e.type !== "CHAT" && (
                       <a href={href} target="_blank" rel="noreferrer" className="text-[var(--axon-blue)]">
-                        開啟附件
+                        {t("case.openFile")}
                       </a>
                     )}
                   </div>
@@ -849,16 +867,16 @@ export default function CaseDetailPage() {
                 <div className="text-sm font-medium">{e.title}</div>
                 {tags.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {tags.map((t) => (
-                      <span key={t} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                        #{t}
+                    {tags.map((tag) => (
+                      <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                        #{tag}
                       </span>
                     ))}
                   </div>
                 )}
                 {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
                 {isAfter ? (
-                  <p className="mt-2 text-xs font-medium text-emerald-700">已標記整改後</p>
+                  <p className="mt-2 text-xs font-medium text-emerald-700">{t("case.markedAfter")}</p>
                 ) : (
                   <button
                     type="button"
@@ -866,25 +884,27 @@ export default function CaseDetailPage() {
                     onClick={() => markAfter(e.id)}
                     className="mt-2 text-xs font-medium text-[var(--axon-blue)] hover:underline"
                   >
-                    標記為整改後
+                    {t("case.markAfter")}
                   </button>
                 )}
               </div>
             );
           })}
-          {item.evidence.length === 0 && <p className="text-sm text-slate-400">尚無附件</p>}
+          {item.evidence.length === 0 && (
+            <p className="text-sm text-slate-400">{t("case.noFiles")}</p>
+          )}
           </div>
         </section>
       )}
 
       {tab === "logs" && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="mb-3 text-sm font-semibold">任務</h2>
+          <h2 className="mb-3 text-sm font-semibold">{t("case.tasks")}</h2>
           <ul className="mb-6 space-y-2">
-            {item.tasks.map((t) => (
-              <li key={t.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                {t.title}
-                <span className="ml-2 text-xs text-slate-400">{t.status}</span>
+            {item.tasks.map((task) => (
+              <li key={task.id} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                {task.title}
+                <span className="ml-2 text-xs text-slate-400">{task.status}</span>
               </li>
             ))}
           </ul>

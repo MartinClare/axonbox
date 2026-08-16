@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2, MessageCircleQuestion, Minimize2, Sparkles, X } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
 
 type Citation = {
   title: string;
@@ -14,17 +15,25 @@ type Citation = {
   url: string;
 };
 
-const QUICK = [
+const QUICK_ZH = [
   "什麼是 XPMS？",
   "AN 要提前多久提交？",
   "圍板／圍欄有什麼安全注意？",
   "混凝土澆置前要檢查什麼？",
 ];
 
+const QUICK_EN = [
+  "What is XPMS?",
+  "How far ahead must AN be submitted?",
+  "Hoarding / fencing safety tips?",
+  "What to check before concreting?",
+];
+
 /**
  * Global engineering ask dock — HyD/XPMS + general site engineering.
  */
 export function AskDock() {
+  const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState("");
@@ -34,10 +43,12 @@ export function AskDock() {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const quick = locale === "en" ? QUICK_EN : QUICK_ZH;
+
   useEffect(() => {
     if (open) {
-      const t = setTimeout(() => inputRef.current?.focus(), 80);
-      return () => clearTimeout(t);
+      const timer = setTimeout(() => inputRef.current?.focus(), 80);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 
@@ -62,7 +73,7 @@ export function AskDock() {
     });
     setBusy(false);
     if (!res.ok) {
-      setError(res.error || "提問失敗");
+      setError(res.error || t("ask.fail"));
       return;
     }
     setAnswer(res.data?.answer || "");
@@ -77,10 +88,10 @@ export function AskDock() {
           type="button"
           onClick={() => setOpen(true)}
           className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-2 rounded-full bg-[var(--axon-ink)] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(0,48,73,0.28)] ring-2 ring-[var(--axon-signal)] transition hover:bg-[#02445f] md:bottom-6 md:right-6"
-          aria-label="提問工程問題"
+          aria-label={t("ask.fabAria")}
         >
           <MessageCircleQuestion size={18} />
-          <span className="hidden sm:inline">問工程</span>
+          <span className="hidden sm:inline">{t("ask.fab")}</span>
         </button>
       )}
 
@@ -94,45 +105,43 @@ export function AskDock() {
           <header className="border-b border-[var(--axon-line)] bg-[var(--axon-ink)] px-4 py-3 text-white">
             <div className="mb-2 h-1 rounded-full bg-gradient-to-r from-[var(--axon-danger)] via-[var(--axon-accent)] to-[var(--axon-signal)]" />
             <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold">工程提問</div>
-              <div className="text-[11px] text-[var(--axon-signal)]/90">HyD／XPMS · 一般工程實務</div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-lg p-1.5 text-white/70 hover:bg-white/10"
-                aria-label="收合"
-              >
-                <Minimize2 size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  setAnswer("");
-                  setCitations([]);
-                  setError("");
-                  setMode("");
-                }}
-                className="rounded-lg p-1.5 text-white/70 hover:bg-white/10"
-                aria-label="關閉"
-              >
-                <X size={16} />
-              </button>
-            </div>
+              <div>
+                <div className="text-sm font-semibold">{t("ask.title")}</div>
+                <div className="text-[11px] text-[var(--axon-signal)]/90">{t("ask.sub")}</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-lg p-1.5 text-white/70 hover:bg-white/10"
+                  aria-label={t("ask.collapse")}
+                >
+                  <Minimize2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setAnswer("");
+                    setCitations([]);
+                    setError("");
+                    setMode("");
+                  }}
+                  className="rounded-lg p-1.5 text-white/70 hover:bg-white/10"
+                  aria-label={t("ask.close")}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
           </header>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {!answer && !error && !busy && (
               <div className="space-y-2">
-                <p className="text-xs text-slate-500">
-                  可問 XPMS／許可，也可問安全、品質、進度等一般工程問題。官方條文會附來源頁碼。
-                </p>
+                <p className="text-xs text-slate-500">{t("ask.hint")}</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {QUICK.map((s) => (
+                  {quick.map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -149,7 +158,7 @@ export function AskDock() {
             {busy && (
               <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
                 <Loader2 size={16} className="animate-spin" />
-                正在分析工程問題…
+                {t("ask.analyzing")}
               </div>
             )}
 
@@ -158,10 +167,10 @@ export function AskDock() {
             {answer && (
               <div className="space-y-3">
                 {mode === "general" && (
-                  <p className="text-[11px] text-amber-700">一般工程實務回答 · 非官方條例</p>
+                  <p className="text-[11px] text-amber-700">{t("ask.practical")}</p>
                 )}
                 {mode === "hybrid" && (
-                  <p className="text-[11px] text-slate-500">含官方摘錄 + 工程實務</p>
+                  <p className="text-[11px] text-slate-500">{t("ask.officialMix")}</p>
                 )}
                 <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
                   {answer}
@@ -169,7 +178,7 @@ export function AskDock() {
                 {citations.length > 0 && (
                   <div className="space-y-1.5 rounded-xl bg-slate-50 p-3">
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                      官方引用
+                      {t("ask.citations")}
                     </div>
                     {citations.slice(0, 4).map((c, i) => (
                       <a
@@ -189,7 +198,7 @@ export function AskDock() {
                   className="inline-block text-xs text-slate-500 hover:text-[var(--axon-blue)]"
                   onClick={() => setOpen(false)}
                 >
-                  在完整知識頁繼續 →
+                  {t("ask.more")}
                 </Link>
               </div>
             )}
@@ -201,7 +210,7 @@ export function AskDock() {
                 ref={inputRef}
                 rows={2}
                 className="axon-input min-h-0 flex-1 resize-none py-2 text-sm"
-                placeholder="工程問題（不限 XPMS）…"
+                placeholder={t("ask.ph")}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => {

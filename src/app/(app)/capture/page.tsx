@@ -18,13 +18,12 @@ import {
   Archive,
 } from "lucide-react";
 import {
-  CATEGORY_LABELS,
-  SEVERITY_LABELS,
   SEVERITY_COLORS,
   cn,
 } from "@/lib/labels";
 import { isProbablyImage, isBrowserUnsupportedImage } from "@/lib/media";
 import { apiFetch } from "@/lib/api-client";
+import { useI18n } from "@/components/I18nProvider";
 
 type Finding = {
   type: string;
@@ -60,6 +59,7 @@ function normalizeTag(raw: string) {
 
 export default function CapturePage() {
   const router = useRouter();
+  const { t, categoryLabels, severityLabels } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"photo" | "chat" | "voice">("photo");
   const [file, setFile] = useState<File | null>(null);
@@ -104,7 +104,7 @@ export default function CapturePage() {
     }
     if (isBrowserUnsupportedImage(f)) {
       setPreview(null);
-      setError("目前瀏覽器無法預覽 HEIC。請改用 JPG／PNG（手機可先用「最相容」拍照），AI 仍可嘗試分析。");
+      setError(t("capture.heic"));
       return;
     }
     if (isProbablyImage(f)) {
@@ -115,14 +115,14 @@ export default function CapturePage() {
   }
 
   function addTag(raw: string) {
-    const t = normalizeTag(raw);
-    if (!t) return;
-    setTags((prev) => (prev.includes(t) ? prev : [...prev, t].slice(0, 20)));
+    const tag = normalizeTag(raw);
+    if (!tag) return;
+    setTags((prev) => (prev.includes(tag) ? prev : [...prev, tag].slice(0, 20)));
     setTagDraft("");
   }
 
-  function removeTag(t: string) {
-    setTags((prev) => prev.filter((x) => x !== t));
+  function removeTag(tag: string) {
+    setTags((prev) => prev.filter((x) => x !== tag));
   }
 
   async function extract(analysisMode: AnalysisMode) {
@@ -138,7 +138,7 @@ export default function CapturePage() {
     setBusy(false);
     setBusyMode(null);
     if (!res.ok) {
-      setError("分析失敗，請重試");
+      setError(t("capture.analyzeFail"));
       return;
     }
     const data = (await res.json()) as ExtractResult;
@@ -152,7 +152,7 @@ export default function CapturePage() {
     setError("");
     const form = new FormData();
     form.set("source", mode === "chat" ? "WHATSAPP_IMPORT" : "UPLOAD");
-    form.set("title", result?.title || file?.name || "現場記錄");
+    form.set("title", result?.title || file?.name || t("capture.siteLog"));
     form.set("chatText", text);
     form.set("tagsJson", JSON.stringify(tags));
     form.set("skipAi", "1");
@@ -161,10 +161,10 @@ export default function CapturePage() {
     const evRes = await fetch("/api/evidence", { method: "POST", body: form });
     setBusy(false);
     if (!evRes.ok) {
-      setError("儲存證據失敗");
+      setError(t("capture.saveEvidenceFail"));
       return;
     }
-    setMsg("已存入證據庫");
+    setMsg(t("capture.savedEvidence"));
     setTimeout(() => setMsg(""), 2500);
     apiFetch<{ tags?: string[] }>("/api/evidence?suggestTags=1").then((res) => {
       if (res.ok) setSuggestedTags(res.data?.tags || []);
@@ -209,7 +209,7 @@ export default function CapturePage() {
     });
     setBusy(false);
     if (!res.ok) {
-      setError("建立事件失敗");
+      setError(t("capture.createCaseFail"));
       return;
     }
     const created = await res.json();
@@ -226,19 +226,19 @@ export default function CapturePage() {
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--axon-steel)]">
             Site Vision
           </p>
-          <h1 className="axon-title mt-1 text-3xl font-semibold">拍一張，看清場地</h1>
+          <h1 className="axon-title mt-1 text-3xl font-semibold">{t("capture.title")}</h1>
           <p className="axon-muted mt-2 max-w-xl text-sm leading-relaxed">
-            記錄現況或發現問題：AI 會自動標籤，也可一鍵建立可追蹤事件。
+            {t("capture.subtitle")}
           </p>
         </div>
         <div className="flex gap-1 rounded-full border border-[var(--axon-line)] bg-white/80 p-1">
           {(
             [
-              ["photo", "照片", Camera],
-              ["chat", "訊息", MessageSquare],
-              ["voice", "語音", Mic],
+              ["photo", "capture.photo", Camera],
+              ["chat", "capture.message", MessageSquare],
+              ["voice", "capture.voice", Mic],
             ] as const
-          ).map(([k, label, Icon]) => (
+          ).map(([k, labelKey, Icon]) => (
             <button
               key={k}
               onClick={() => setMode(k)}
@@ -250,7 +250,7 @@ export default function CapturePage() {
               )}
             >
               <Icon size={14} />
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -260,14 +260,14 @@ export default function CapturePage() {
         <section className="axon-panel overflow-hidden">
           <div className="border-b border-[var(--axon-line)] px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--axon-ink)]">
-              {mode === "photo" ? "現場照片" : mode === "chat" ? "訊息匯入" : "語音記錄"}
+              {mode === "photo" ? t("capture.sitePhoto") : mode === "chat" ? t("capture.msgImport") : t("capture.voiceLog")}
             </h2>
             <p className="axon-muted mt-0.5 text-xs">
               {mode === "photo"
-                ? "支援直接拍攝或從相簿選取 · 記錄現況／發現問題"
+                ? t("capture.photoHint")
                 : mode === "chat"
-                  ? "可貼上聊天紀錄；正式收件請轉發到場務 WhatsApp 號碼"
-                  : "可加說明位置、工序或風險點"}
+                  ? t("capture.msgHint")
+                  : t("capture.voiceHint")}
             </p>
           </div>
 
@@ -290,15 +290,15 @@ export default function CapturePage() {
                     <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 backdrop-blur">
                       <ImagePlus size={22} />
                     </div>
-                    <div className="text-base font-medium">點擊拍攝或上傳</div>
+                    <div className="text-base font-medium">{t("capture.clickUpload")}</div>
                     <div className="mt-1 text-xs text-white/70">
-                      JPG / PNG / WebP · 建議對準作業面
+                      {t("capture.formatHint")}
                     </div>
                   </>
                 )}
                 {preview && (
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 text-left text-xs">
-                    點擊更換照片
+                    {t("capture.changePhoto")}
                   </div>
                 )}
               </button>
@@ -321,7 +321,7 @@ export default function CapturePage() {
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--axon-navy)] px-4 py-2 text-sm text-white"
                 >
                   <Mic size={14} />
-                  上傳語音
+                  {t("capture.uploadVoice")}
                 </button>
                 {file && <p className="axon-muted mt-3 text-xs">{file.name}</p>}
               </div>
@@ -329,15 +329,15 @@ export default function CapturePage() {
 
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-500">
-                {mode === "chat" ? "WhatsApp / 訊息內容" : "補充說明（可選）"}
+                {mode === "chat" ? t("capture.waContent") : t("capture.extraOpt")}
               </label>
               <textarea
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3.5 py-3 text-sm outline-none ring-[var(--axon-steel)]/20 focus:ring-2"
                 rows={mode === "chat" ? 7 : 3}
                 placeholder={
                   mode === "chat"
-                    ? "[10:21] 現場主管：B區五樓圍欄未裝"
-                    : "例如：B區5樓平台、模板作業"
+                    ? t("capture.chatPh")
+                    : t("capture.locationPh")
                 }
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -356,7 +356,7 @@ export default function CapturePage() {
                   ) : (
                     <NotebookPen size={16} />
                   )}
-                  {busyMode === "record" ? "記錄中…" : "記錄現況"}
+                  {busyMode === "record" ? t("capture.recording") : t("capture.recordStatus")}
                 </button>
                 <button
                   disabled={busy || (!file && !text)}
@@ -368,7 +368,7 @@ export default function CapturePage() {
                   ) : (
                     <Search size={16} />
                   )}
-                  {busyMode === "discover" ? "分析中…" : "發現問題"}
+                  {busyMode === "discover" ? t("capture.analyzing") : t("capture.findIssue")}
                 </button>
               </div>
             ) : (
@@ -378,7 +378,7 @@ export default function CapturePage() {
                 className="axon-btn axon-btn-primary w-full"
               >
                 {busy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-                {busy ? "AI 分析中…" : "開始分析"}
+                {busy ? t("capture.aiWorking") : t("capture.startAnalyze")}
               </button>
             )}
             {error && <p className="text-sm text-rose-600">{error}</p>}
@@ -388,9 +388,9 @@ export default function CapturePage() {
 
         <section className="axon-panel overflow-hidden">
           <div className="border-b border-[var(--axon-line)] px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">分析結果</h2>
+            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">{t("capture.result")}</h2>
             <p className="axon-muted mt-0.5 text-xs">
-              {isRecord ? "現況摘要 · 標籤 · 可存檔或建事件" : "漏洞 · 進度 · 建議動作"}
+              {isRecord ? t("capture.resultStatus") : t("capture.resultIssue")}
             </p>
           </div>
 
@@ -400,18 +400,18 @@ export default function CapturePage() {
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-[var(--axon-steel)]">
                   <ShieldAlert size={20} />
                 </div>
-                <p className="text-sm font-medium text-slate-700">上傳照片後，選擇分析方式</p>
+                <p className="text-sm font-medium text-slate-700">{t("capture.emptyHint")}</p>
                 <ul className="axon-muted mt-3 space-y-1 text-xs">
-                  <li>· 記錄現況：存檔工序與進度，不硬找缺陷</li>
-                  <li>· 發現問題：安全／質量／進度風險</li>
-                  <li>· 自動標籤，可自行增刪如 IG</li>
+                  <li>· {t("capture.bulletStatus")}</li>
+                  <li>· {t("capture.bulletIssue")}</li>
+                  <li>· {t("capture.bulletTags")}</li>
                 </ul>
               </div>
             ) : (
               <div className="space-y-5">
                 {result.mock && (
                   <div className="rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    真實 AI 模式未生效時會顯示此提示。請確認 OpenRouter Key 已設定並重啟服務。
+                    {t("capture.mockBanner")}
                   </div>
                 )}
 
@@ -423,16 +423,16 @@ export default function CapturePage() {
                         isRecord ? "bg-sky-700" : "bg-[var(--axon-navy)]",
                       )}
                     >
-                      {isRecord ? "記錄現況" : "發現問題"}
+                      {isRecord ? t("capture.recordStatus") : t("capture.findIssue")}
                     </span>
                     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] text-slate-700">
-                      {CATEGORY_LABELS[result.category] || result.category}
+                      {categoryLabels[result.category] || result.category}
                     </span>
                     <span className={cn("text-xs font-semibold", SEVERITY_COLORS[result.severity])}>
-                      {SEVERITY_LABELS[result.severity]} 風險
+                      {t("capture.severityRisk", { label: severityLabels[result.severity] || result.severity })}
                     </span>
                     <span className="text-xs text-slate-400">
-                      置信度 {Math.round((result.confidence || 0) * 100)}%
+                      {t("capture.confidence", { n: Math.round((result.confidence || 0) * 100) })}
                     </span>
                   </div>
                   <input
@@ -447,18 +447,18 @@ export default function CapturePage() {
 
                 <div>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    標籤
+                    {t("capture.tags")}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {tags.map((t) => (
+                    {tags.map((tag) => (
                       <button
-                        key={t}
+                        key={tag}
                         type="button"
-                        onClick={() => removeTag(t)}
+                        onClick={() => removeTag(tag)}
                         className="inline-flex items-center gap-1 rounded-full bg-[#e8f4fb] px-2.5 py-1 text-xs font-medium text-[#02445f]"
-                        title="移除標籤"
+                        title={t("capture.removeTag")}
                       >
-                        #{t}
+                        #{tag}
                         <X size={11} className="opacity-60" />
                       </button>
                     ))}
@@ -466,7 +466,7 @@ export default function CapturePage() {
                   <div className="mt-2 flex gap-2">
                     <input
                       className="axon-input min-h-0 flex-1 py-2 text-sm"
-                      placeholder="新增標籤，按 Enter…"
+                      placeholder={t("capture.addTagPh")}
                       value={tagDraft}
                       onChange={(e) => setTagDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -481,19 +481,19 @@ export default function CapturePage() {
                       className="axon-btn axon-btn-ghost min-h-9 px-3 text-xs"
                       onClick={() => addTag(tagDraft)}
                     >
-                      加入
+                      {t("common.addItem")}
                     </button>
                   </div>
                   {suggestable.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {suggestable.map((t) => (
+                      {suggestable.map((tag) => (
                         <button
-                          key={t}
+                          key={tag}
                           type="button"
-                          onClick={() => addTag(t)}
+                          onClick={() => addTag(tag)}
                           className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-500 hover:border-[var(--axon-steel)] hover:text-[var(--axon-ink)]"
                         >
-                          + {t}
+                          + {tag}
                         </button>
                       ))}
                     </div>
@@ -504,7 +504,7 @@ export default function CapturePage() {
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <Gauge size={13} />
-                      目視進度
+                      {t("capture.visualProgress")}
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[var(--axon-ink)]">
                       {result.progressPct ?? 0}%
@@ -516,10 +516,10 @@ export default function CapturePage() {
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <Wrench size={13} />
-                      主要工序
+                      {t("capture.mainActivity")}
                     </div>
                     <div className="mt-2 text-sm font-semibold text-[var(--axon-ink)]">
-                      {result.workActivity || "—"}
+                      {result.workActivity || t("common.none")}
                     </div>
                     <div className="axon-muted mt-2 text-xs">{result.location}</div>
                   </div>
@@ -528,11 +528,11 @@ export default function CapturePage() {
                 {(!isRecord || (result.findings || []).length > 0) && (
                   <div>
                     <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {isRecord ? "現況摘要觀察" : "發現的漏洞與問題"}
+                      {isRecord ? t("capture.summaryObs") : t("capture.findings")}
                     </h3>
                     <div className="space-y-2">
                       {(result.findings || []).length === 0 && (
-                        <p className="text-sm text-slate-400">暫未列出具體發現</p>
+                        <p className="text-sm text-slate-400">{t("capture.noFindings")}</p>
                       )}
                       {(result.findings || []).map((f, i) => (
                         <div
@@ -565,7 +565,7 @@ export default function CapturePage() {
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">
-                    {isRecord ? "備註" : "建議動作"}
+                    {isRecord ? t("capture.notes") : t("capture.actions")}
                   </label>
                   <textarea
                     className="w-full rounded-xl border border-[var(--axon-line)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--axon-steel)]/20"
@@ -579,7 +579,7 @@ export default function CapturePage() {
 
                 <details className="rounded-xl border border-[var(--axon-line)] bg-slate-50/60 p-3">
                   <summary className="cursor-pointer text-sm font-medium text-slate-600">
-                    更多選項（分類／指派）
+                    {t("capture.moreOptions")}
                   </summary>
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 gap-2">
@@ -588,7 +588,7 @@ export default function CapturePage() {
                         value={result.category}
                         onChange={(e) => setResult({ ...result, category: e.target.value })}
                       >
-                        {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                        {Object.entries(categoryLabels).map(([k, v]) => (
                           <option key={k} value={k}>
                             {v}
                           </option>
@@ -599,7 +599,7 @@ export default function CapturePage() {
                         value={result.severity}
                         onChange={(e) => setResult({ ...result, severity: e.target.value })}
                       >
-                        {Object.entries(SEVERITY_LABELS).map(([k, v]) => (
+                        {Object.entries(severityLabels).map(([k, v]) => (
                           <option key={k} value={k}>
                             {v}
                           </option>
@@ -608,13 +608,13 @@ export default function CapturePage() {
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-slate-500">負責人</span>
+                        <span className="text-xs font-medium text-slate-500">{t("capture.assignee")}</span>
                         <select
                           className="axon-input"
                           value={assigneeId}
                           onChange={(e) => setAssigneeId(e.target.value)}
                         >
-                          <option value="">預設（當前登入）</option>
+                          <option value="">{t("capture.assigneeDefault")}</option>
                           {people.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name}
@@ -623,13 +623,13 @@ export default function CapturePage() {
                         </select>
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-slate-500">分判公司</span>
+                        <span className="text-xs font-medium text-slate-500">{t("capture.sub")}</span>
                         <select
                           className="axon-input"
                           value={subcontractorId}
                           onChange={(e) => setSubcontractorId(e.target.value)}
                         >
-                          <option value="">待指派</option>
+                          <option value="">{t("capture.pendingAssign")}</option>
                           {companies.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}
@@ -650,7 +650,7 @@ export default function CapturePage() {
                       className="axon-btn axon-btn-ghost w-full"
                     >
                       <Archive size={16} />
-                      只存證據
+                      {t("capture.saveEvidenceOnly")}
                     </button>
                   )}
                   <button
@@ -659,7 +659,7 @@ export default function CapturePage() {
                     className={cn("axon-btn axon-btn-ok w-full", !isRecord && "sm:col-span-2")}
                   >
                     <CheckCircle2 size={16} />
-                    確認並建立事件
+                    {t("capture.confirmCreateCase")}
                   </button>
                 </div>
               </div>

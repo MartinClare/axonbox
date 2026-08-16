@@ -10,8 +10,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { ROLE_LABELS, TRADE_OPTIONS, cn } from "@/lib/labels";
+import { TRADE_OPTIONS, cn } from "@/lib/labels";
 import { apiFetch, asArray } from "@/lib/api-client";
+import { useI18n } from "@/components/I18nProvider";
 
 type UserRow = {
   id: string;
@@ -90,7 +91,21 @@ const emptySub = (): SubForm => ({
   userId: "",
 });
 
+/** Canonical DB values (zh) → i18n keys for dropdown labels. */
+const TRADE_KEYS: Record<string, string> = {
+  安全防護: "trade.safety",
+  鋼筋: "trade.rebar",
+  模板: "trade.formwork",
+  混凝土: "trade.concrete",
+  電氣: "trade.electrical",
+  水電: "trade.me",
+  環保清潔: "trade.enviro",
+  團隊工程: "trade.civil",
+  其他: "trade.other",
+};
+
 export default function DirectoryPage() {
+  const { t, roleLabels } = useI18n();
   const [tab, setTab] = useState<"people" | "companies">("people");
   const [users, setUsers] = useState<UserRow[]>([]);
   const [subs, setSubs] = useState<SubRow[]>([]);
@@ -143,6 +158,12 @@ export default function DirectoryPage() {
         (x.email || "").toLowerCase().includes(s),
     );
   }, [subs, q]);
+
+  function tradeLabel(value: string | null | undefined) {
+    if (!value) return "";
+    const key = TRADE_KEYS[value];
+    return key ? t(key) : value;
+  }
 
   function flash(text: string) {
     setMsg(text);
@@ -213,22 +234,22 @@ export default function DirectoryPage() {
     setBusy(false);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      flash(err.error === "email already exists" ? "電郵已存在" : "保存失敗");
+      flash(err.error === "email already exists" ? t("dir.emailExists") : t("dir.saveFail"));
       return;
     }
     setUserOpen(false);
-    flash(editingUser ? "人員已更新" : "人員已新增");
+    flash(editingUser ? t("dir.personUpdated") : t("dir.personAdded"));
     await load();
   }
 
   async function deleteUser(id: string) {
-    if (!confirm("確定刪除此人員？相關事件指派會清空。")) return;
+    if (!confirm(t("dir.personDelConfirm"))) return;
     const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      flash("無法刪除（可能是當前登入帳號）");
+      flash(t("dir.personDelFail"));
       return;
     }
-    flash("人員已刪除");
+    flash(t("dir.personDeleted"));
     await load();
   }
 
@@ -251,18 +272,18 @@ export default function DirectoryPage() {
         });
     setBusy(false);
     if (!res.ok) {
-      flash("保存失敗");
+      flash(t("dir.saveFail"));
       return;
     }
     setSubOpen(false);
-    flash(editingSub ? "公司已更新" : "公司已新增");
+    flash(editingSub ? t("dir.coUpdated") : t("dir.coAdded"));
     await load();
   }
 
   async function deleteSub(id: string) {
-    if (!confirm("確定刪除此公司？相關事件分判指派會清空。")) return;
+    if (!confirm(t("dir.coDelConfirm"))) return;
     await fetch(`/api/subcontractors/${id}`, { method: "DELETE" });
-    flash("公司已刪除");
+    flash(t("dir.coDeleted"));
     await load();
   }
 
@@ -273,10 +294,8 @@ export default function DirectoryPage() {
           <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
             Directory
           </p>
-          <h1 className="axon-title mt-1 text-2xl font-semibold">人員與公司</h1>
-          <p className="mt-1 text-sm axon-muted">
-            維護現場人員、分判公司與聯絡資料，供事件指派使用
-          </p>
+          <h1 className="axon-title mt-1 text-2xl font-semibold">{t("dir.title")}</h1>
+          <p className="mt-1 text-sm axon-muted">{t("dir.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           {msg && (
@@ -289,7 +308,7 @@ export default function DirectoryPage() {
             className="inline-flex items-center gap-2 rounded-xl bg-[var(--axon-ink)] px-4 py-2.5 text-sm text-white transition hover:bg-[var(--axon-navy)]"
           >
             <Plus size={16} />
-            {tab === "people" ? "新增人員" : "新增公司"}
+            {tab === "people" ? t("dir.addPerson") : t("dir.addCompany")}
           </button>
         </div>
       </div>
@@ -306,7 +325,7 @@ export default function DirectoryPage() {
             )}
           >
             <Users size={15} />
-            人員
+            {t("dir.tabPeople")}
             <span className="text-xs opacity-70">{users.length}</span>
           </button>
           <button
@@ -319,14 +338,14 @@ export default function DirectoryPage() {
             )}
           >
             <Building2 size={15} />
-            公司
+            {t("common.company")}
             <span className="text-xs opacity-70">{subs.length}</span>
           </button>
         </div>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={tab === "people" ? "搜尋姓名、電郵、職稱…" : "搜尋公司、聯絡人、工種…"}
+          placeholder={tab === "people" ? t("dir.searchPeople") : t("dir.searchCos")}
           className="min-w-[220px] flex-1 rounded-xl border border-[var(--axon-line)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
         />
       </div>
@@ -336,12 +355,12 @@ export default function DirectoryPage() {
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="border-b border-[var(--axon-line)] bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-medium">姓名</th>
-                <th className="px-4 py-3 font-medium">角色</th>
-                <th className="px-4 py-3 font-medium">職稱 / 公司</th>
-                <th className="px-4 py-3 font-medium">轉寄地址</th>
-                <th className="px-4 py-3 font-medium">聯絡</th>
-                <th className="px-4 py-3 font-medium">事件</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.name")}</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.role")}</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.titleCo")}</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.forward")}</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.contact")}</th>
+                <th className="px-4 py-3 font-medium">{t("dir.col.cases")}</th>
                 <th className="px-4 py-3 font-medium" />
               </tr>
             </thead>
@@ -357,11 +376,11 @@ export default function DirectoryPage() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                      {ROLE_LABELS[u.role] || u.role}
+                      {roleLabels[u.role] || u.role}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    <div>{u.title || "—"}</div>
+                    <div>{u.title || t("common.none")}</div>
                     <div className="text-xs text-slate-400">{u.company || ""}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -371,18 +390,18 @@ export default function DirectoryPage() {
                         className="inline-flex max-w-[220px] items-center gap-1 text-left text-xs text-[var(--axon-blue)]"
                         onClick={async () => {
                           await navigator.clipboard.writeText(u.inboundAddress || "");
-                          flash("已複製轉寄地址");
+                          flash(t("dir.copiedForward"));
                         }}
-                        title="複製到郵件 To"
+                        title={t("dir.copyTo")}
                       >
                         <Copy size={12} />
                         <span className="truncate">{u.inboundAddress}</span>
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs text-slate-400">{t("common.none")}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{u.phone || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600">{u.phone || t("common.none")}</td>
                   <td className="px-4 py-3 text-slate-500">
                     {u._count?.assignedCases ?? 0}
                   </td>
@@ -391,14 +410,14 @@ export default function DirectoryPage() {
                       <button
                         onClick={() => openEditUser(u)}
                         className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-[var(--axon-ink)]"
-                        title="編輯"
+                        title={t("common.edit")}
                       >
                         <Pencil size={14} />
                       </button>
                       <button
                         onClick={() => deleteUser(u.id)}
                         className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                        title="刪除"
+                        title={t("common.delete")}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -409,7 +428,7 @@ export default function DirectoryPage() {
               {filteredUsers.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                    尚無人員，點右上角新增
+                    {t("dir.emptyPeople")}
                   </td>
                 </tr>
               )}
@@ -428,11 +447,11 @@ export default function DirectoryPage() {
                   <div className="mt-1 flex flex-wrap gap-2 text-xs">
                     {s.trade && (
                       <span className="rounded-md bg-[var(--axon-sand)] px-2 py-0.5 text-[var(--axon-blue)]">
-                        {s.trade}
+                        {tradeLabel(s.trade)}
                       </span>
                     )}
                     <span className="text-slate-400">
-                      關聯事件 {s._count?.cases ?? 0}
+                      {t("dir.linkedCases", { n: s._count?.cases ?? 0 })}
                     </span>
                   </div>
                 </div>
@@ -453,28 +472,28 @@ export default function DirectoryPage() {
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                 <div>
-                  <dt className="text-[11px] text-slate-400">聯絡人</dt>
-                  <dd>{s.contact || "—"}</dd>
+                  <dt className="text-[11px] text-slate-400">{t("dir.contact")}</dt>
+                  <dd>{s.contact || t("common.none")}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-slate-400">電話</dt>
-                  <dd>{s.phone || "—"}</dd>
+                  <dt className="text-[11px] text-slate-400">{t("common.phone")}</dt>
+                  <dd>{s.phone || t("common.none")}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-slate-400">電郵</dt>
-                  <dd className="truncate">{s.email || "—"}</dd>
+                  <dt className="text-[11px] text-slate-400">{t("common.email")}</dt>
+                  <dd className="truncate">{s.email || t("common.none")}</dd>
                 </div>
                 <div>
-                  <dt className="text-[11px] text-slate-400">牌照</dt>
-                  <dd>{s.licenseNo || "—"}</dd>
+                  <dt className="text-[11px] text-slate-400">{t("dir.license")}</dt>
+                  <dd>{s.licenseNo || t("common.none")}</dd>
                 </div>
                 <div className="col-span-2">
-                  <dt className="text-[11px] text-slate-400">地址</dt>
-                  <dd>{s.address || "—"}</dd>
+                  <dt className="text-[11px] text-slate-400">{t("common.address")}</dt>
+                  <dd>{s.address || t("common.none")}</dd>
                 </div>
                 {s.user && (
                   <div className="col-span-2">
-                    <dt className="text-[11px] text-slate-400">關聯登入帳號</dt>
+                    <dt className="text-[11px] text-slate-400">{t("dir.linkedUser")}</dt>
                     <dd>
                       {s.user.name}{" "}
                       <span className="text-slate-400">({s.user.email})</span>
@@ -483,7 +502,7 @@ export default function DirectoryPage() {
                 )}
                 {s.notes && (
                   <div className="col-span-2">
-                    <dt className="text-[11px] text-slate-400">備註</dt>
+                    <dt className="text-[11px] text-slate-400">{t("common.notes")}</dt>
                     <dd className="text-slate-600">{s.notes}</dd>
                   </div>
                 )}
@@ -492,7 +511,7 @@ export default function DirectoryPage() {
           ))}
           {filteredSubs.length === 0 && (
             <div className="axon-panel col-span-full px-4 py-10 text-center text-slate-400">
-              尚無公司，點右上角新增
+              {t("dir.emptyCompanies")}
             </div>
           )}
         </div>
@@ -500,19 +519,18 @@ export default function DirectoryPage() {
 
       {userOpen && (
         <Modal
-          title={editingUser ? "編輯人員" : "新增人員"}
+          title={editingUser ? t("dir.editPerson") : t("dir.addPerson")}
           onClose={() => setUserOpen(false)}
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="姓名 *">
+            <Field label={t("dir.nameReq")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.name}
                 onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
-                placeholder="陳生"
               />
             </Field>
-            <Field label="電郵 *">
+            <Field label={t("dir.emailReq")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 type="email"
@@ -521,20 +539,20 @@ export default function DirectoryPage() {
                 placeholder="name@company.com"
               />
             </Field>
-            <Field label="角色">
+            <Field label={t("common.role")}>
               <select
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.role}
                 onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
               >
-                {Object.entries(ROLE_LABELS).map(([k, v]) => (
+                {Object.entries(roleLabels).map(([k, v]) => (
                   <option key={k} value={k}>
                     {v}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="電話">
+            <Field label={t("common.phone")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.phone}
@@ -542,24 +560,23 @@ export default function DirectoryPage() {
                 placeholder="9123 4567"
               />
             </Field>
-            <Field label="職稱">
+            <Field label={t("dir.jobTitle")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.title}
                 onChange={(e) => setUserForm({ ...userForm, title: e.target.value })}
-                placeholder="現場主管"
               />
             </Field>
-            <Field label="所屬公司">
+            <Field label={t("dir.orgCo")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.company}
                 onChange={(e) => setUserForm({ ...userForm, company: e.target.value })}
-                placeholder="總承建商 / 顧問公司"
+                placeholder={t("dir.orgPh")}
               />
             </Field>
             {editingUser?.inboundAddress && (
-              <Field label="轉寄地址（保密代號）" className="sm:col-span-2">
+              <Field label={t("dir.forwardCode")} className="sm:col-span-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="min-w-0 flex-1 break-all rounded-xl bg-slate-50 px-3 py-2 text-xs">
                     {editingUser.inboundAddress}
@@ -574,21 +591,21 @@ export default function DirectoryPage() {
                         body: JSON.stringify({ regenerateInboundKey: true }),
                       });
                       if (!res.ok) {
-                        flash("無法重設轉寄代號");
+                        flash(t("dir.resetFail"));
                         return;
                       }
-                      flash("已重設轉寄代號，請重新複製地址");
+                      flash(t("dir.resetOk"));
                       await load();
                       const next = await res.json();
                       setUserForm({ ...userForm, inboundKey: next.inboundKey || "" });
                     }}
                   >
-                    重設代號
+                    {t("dir.resetCode")}
                   </button>
                 </div>
               </Field>
             )}
-            <Field label={editingUser ? "重設密碼（可留空）" : "初始密碼"}>
+            <Field label={editingUser ? t("dir.resetPassword") : t("dir.initPassword")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 type="text"
@@ -597,12 +614,12 @@ export default function DirectoryPage() {
                 placeholder="demo1234"
               />
             </Field>
-            <Field label="備註" className="sm:col-span-2">
+            <Field label={t("common.notes")} className="sm:col-span-2">
               <textarea
                 className="min-h-[72px] w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={userForm.notes}
                 onChange={(e) => setUserForm({ ...userForm, notes: e.target.value })}
-                placeholder="班次、負責區域等"
+                placeholder={t("dir.notesPh")}
               />
             </Field>
           </div>
@@ -611,14 +628,14 @@ export default function DirectoryPage() {
               onClick={() => setUserOpen(false)}
               className="rounded-xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               disabled={busy || !userForm.name || !userForm.email}
               onClick={saveUser}
               className="rounded-xl bg-[var(--axon-ink)] px-4 py-2 text-sm text-white disabled:opacity-40"
             >
-              保存
+              {t("common.save")}
             </button>
           </div>
         </Modal>
@@ -626,41 +643,39 @@ export default function DirectoryPage() {
 
       {subOpen && (
         <Modal
-          title={editingSub ? "編輯公司" : "新增公司"}
+          title={editingSub ? t("dir.editCompany") : t("dir.addCompany")}
           onClose={() => setSubOpen(false)}
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="公司名稱 *" className="sm:col-span-2">
+            <Field label={t("dir.coNameReq")} className="sm:col-span-2">
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.name}
                 onChange={(e) => setSubForm({ ...subForm, name: e.target.value })}
-                placeholder="永盛鋼鐵工程"
               />
             </Field>
-            <Field label="工種">
+            <Field label={t("dir.trade")}>
               <select
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.trade}
                 onChange={(e) => setSubForm({ ...subForm, trade: e.target.value })}
               >
-                <option value="">選擇工種</option>
-                {TRADE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                <option value="">{t("dir.pickTrade")}</option>
+                {TRADE_OPTIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {tradeLabel(value)}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="聯絡人">
+            <Field label={t("dir.contact")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.contact}
                 onChange={(e) => setSubForm({ ...subForm, contact: e.target.value })}
-                placeholder="黃工"
               />
             </Field>
-            <Field label="電話">
+            <Field label={t("common.phone")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.phone}
@@ -668,7 +683,7 @@ export default function DirectoryPage() {
                 placeholder="2123 4567"
               />
             </Field>
-            <Field label="電郵">
+            <Field label={t("common.email")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 type="email"
@@ -677,21 +692,21 @@ export default function DirectoryPage() {
                 placeholder="ops@vendor.com"
               />
             </Field>
-            <Field label="牌照編號">
+            <Field label={t("dir.licenseNo")}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.licenseNo}
                 onChange={(e) => setSubForm({ ...subForm, licenseNo: e.target.value })}
-                placeholder="CIC / 註冊編號"
+                placeholder={t("dir.licensePh")}
               />
             </Field>
-            <Field label="關聯登入帳號">
+            <Field label={t("dir.linkedUser")}>
               <select
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.userId}
                 onChange={(e) => setSubForm({ ...subForm, userId: e.target.value })}
               >
-                <option value="">不關聯</option>
+                <option value="">{t("dir.noLink")}</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} ({u.email})
@@ -699,20 +714,20 @@ export default function DirectoryPage() {
                 ))}
               </select>
             </Field>
-            <Field label="地址" className="sm:col-span-2">
+            <Field label={t("common.address")} className="sm:col-span-2">
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.address}
                 onChange={(e) => setSubForm({ ...subForm, address: e.target.value })}
-                placeholder="公司地址"
+                placeholder={t("dir.addressPh")}
               />
             </Field>
-            <Field label="備註" className="sm:col-span-2">
+            <Field label={t("common.notes")} className="sm:col-span-2">
               <textarea
                 className="min-h-[72px] w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"
                 value={subForm.notes}
                 onChange={(e) => setSubForm({ ...subForm, notes: e.target.value })}
-                placeholder="合約範圍、進場須知等"
+                placeholder={t("dir.coNotesPh")}
               />
             </Field>
           </div>
@@ -721,14 +736,14 @@ export default function DirectoryPage() {
               onClick={() => setSubOpen(false)}
               className="rounded-xl px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
             >
-              取消
+              {t("common.cancel")}
             </button>
             <button
               disabled={busy || !subForm.name}
               onClick={saveSub}
               className="rounded-xl bg-[var(--axon-ink)] px-4 py-2 text-sm text-white disabled:opacity-40"
             >
-              保存
+              {t("common.save")}
             </button>
           </div>
         </Modal>

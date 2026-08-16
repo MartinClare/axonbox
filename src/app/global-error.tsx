@@ -1,5 +1,28 @@
 "use client";
 
+import { useMemo } from "react";
+import {
+  DEFAULT_UI_LOCALE,
+  normalizeUiLocale,
+  UI_LOCALE_COOKIE,
+  UI_LOCALE_STORAGE_KEY,
+  type UiLocale,
+} from "@/lib/i18n/types";
+import { translate } from "@/lib/i18n/messages";
+
+function readLocale(): UiLocale {
+  if (typeof window === "undefined") return DEFAULT_UI_LOCALE;
+  try {
+    const fromStore = window.localStorage.getItem(UI_LOCALE_STORAGE_KEY);
+    if (fromStore) return normalizeUiLocale(fromStore);
+    const match = document.cookie.match(new RegExp(`(?:^|; )${UI_LOCALE_COOKIE}=([^;]*)`));
+    if (match?.[1]) return normalizeUiLocale(decodeURIComponent(match[1]));
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_UI_LOCALE;
+}
+
 export default function GlobalError({
   error,
   reset,
@@ -7,20 +30,27 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const locale = useMemo(() => readLocale(), []);
+  const t = (key: string) => translate(locale, key);
+  const lang = locale === "en" ? "en" : "zh-Hant";
+
   return (
-    <html lang="zh-Hant">
+    <html lang={lang}>
       <body
         style={{
-          fontFamily: '"PingFang TC","Microsoft JhengHei",sans-serif',
+          fontFamily:
+            locale === "en"
+              ? 'system-ui, -apple-system, "Segoe UI", sans-serif'
+              : '"PingFang TC","Microsoft JhengHei",sans-serif',
           margin: 0,
           background: "#f3f6f9",
           color: "#0f172a",
         }}
       >
         <div style={{ maxWidth: 420, margin: "80px auto", padding: 24, textAlign: "center" }}>
-          <h1 style={{ fontSize: 20, marginBottom: 8 }}>系統暫時無法使用</h1>
+          <h1 style={{ fontSize: 20, marginBottom: 8 }}>{t("error.globalTitle")}</h1>
           <p style={{ fontSize: 14, color: "#64748b", marginBottom: 20 }}>
-            {error?.message?.slice(0, 120) || "請重新整理或稍後再試。"}
+            {error?.message?.slice(0, 120) || t("error.globalBody")}
           </p>
           <button
             type="button"
@@ -35,7 +65,7 @@ export default function GlobalError({
               cursor: "pointer",
             }}
           >
-            重試
+            {t("error.retry")}
           </button>
         </div>
       </body>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BookOpen, Loader2, Sparkles } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
+import { useI18n } from "@/components/I18nProvider";
 
 type Citation = {
   title: string;
@@ -12,7 +13,7 @@ type Citation = {
   url: string;
 };
 
-const SUGGESTIONS = [
+const SUGGESTIONS_ZH = [
   "什麼是 XPMS？如何登記成為用戶？",
   "開工前 Advance Notification 要提前多久提交？",
   "工地出入口與行人通道有什麼安全要點？",
@@ -20,12 +21,23 @@ const SUGGESTIONS = [
   "短期工程與標準／非標準工程有何分別？",
 ];
 
+const SUGGESTIONS_EN = [
+  "What is XPMS and how do I register?",
+  "How far in advance must Advance Notification be submitted?",
+  "What are the safety points for site access and pedestrian routes?",
+  "What should be checked before concreting?",
+  "How do short-term works differ from standard / non-standard works?",
+];
+
 export default function KnowledgePage() {
+  const { t, locale } = useI18n();
   const [q, setQ] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
   const [busy, setBusy] = useState(false);
   const [mock, setMock] = useState(false);
+
+  const suggestions = locale === "en" ? SUGGESTIONS_EN : SUGGESTIONS_ZH;
 
   async function ask(question?: string) {
     const text = (question || q).trim();
@@ -56,20 +68,15 @@ export default function KnowledgePage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <h1 className="axon-title text-2xl font-semibold">工程提問</h1>
-        <p className="mt-1 text-sm axon-muted">
-          HyD／XPMS 官方問題會附來源頁碼；一般工地安全、品質、進度等也可直接問 AI。
-          右下角「問工程」可快速查詢。
-        </p>
-        <p className="mt-1 text-xs text-slate-400">
-          官方：xpms.hyd.gov.hk · www.hyd.gov.hk
-        </p>
+        <h1 className="axon-title text-2xl font-semibold">{t("knowledge.title")}</h1>
+        <p className="mt-1 text-sm axon-muted">{t("knowledge.subtitle")}</p>
+        <p className="mt-1 text-xs text-slate-400">{t("knowledge.official")}</p>
       </div>
 
       <section className="axon-panel space-y-3 p-5">
         <textarea
           className="axon-input min-h-[100px]"
-          placeholder="例如：XPMS 如何登記？或：圍板固定要注意什麼？"
+          placeholder={t("knowledge.ph")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -79,10 +86,10 @@ export default function KnowledgePage() {
           className="axon-btn axon-btn-primary w-full"
         >
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-          AI 工程回答
+          {t("knowledge.aiAnswer")}
         </button>
         <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((s) => (
+          {suggestions.map((s) => (
             <button
               key={s}
               type="button"
@@ -99,8 +106,10 @@ export default function KnowledgePage() {
         <section className="axon-panel space-y-4 p-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <BookOpen size={15} />
-            回答
-            {mock && <span className="text-xs font-normal text-amber-600">（知識庫直出／Mock）</span>}
+            {t("knowledge.answer")}
+            {mock && (
+              <span className="text-xs font-normal text-amber-600">{t("knowledge.mock")}</span>
+            )}
           </div>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700 [overflow-wrap:anywhere]">
             {answer}
@@ -108,7 +117,7 @@ export default function KnowledgePage() {
           {citations.length > 0 && (
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                引用來源（頁碼／章節）
+                {t("knowledge.sources")}
               </h3>
               <ul className="space-y-2">
                 {citations.map((c, i) => (
@@ -126,7 +135,7 @@ export default function KnowledgePage() {
                       rel="noreferrer"
                       className="text-[var(--axon-blue)] hover:underline"
                     >
-                      開啟原文
+                      {t("knowledge.openSource")}
                     </a>
                   </li>
                 ))}

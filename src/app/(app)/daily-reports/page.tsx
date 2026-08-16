@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { KpiCard } from "@/components/KpiCard";
-import { CASE_STATUS_LABELS, SEVERITY_LABELS, STATUS_COLORS, cn, formatDay } from "@/lib/labels";
+import { STATUS_COLORS, cn, formatDay } from "@/lib/labels";
 import { apiFetch, safeJsonParse } from "@/lib/api-client";
+import { useI18n } from "@/components/I18nProvider";
 
 type Report = {
   id: string;
@@ -30,7 +31,16 @@ type DiaryRollup = {
   shareText: string;
 };
 
+function isRemarksPlanLine(p: string) {
+  return p.startsWith("備註：") || p.startsWith("Notes:");
+}
+
+function stripRemarksPrefix(p: string) {
+  return p.replace(/^(備註：|Notes:)\s*/, "");
+}
+
 export default function DailyReportsPage() {
+  const { t, caseStatusLabels, severityLabels } = useI18n();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [report, setReport] = useState<Report | null>(null);
   const [diary, setDiary] = useState<DiaryRollup | null>(null);
@@ -80,7 +90,7 @@ export default function DailyReportsPage() {
     setBusy(false);
     if (res.ok) {
       setReport(await res.json());
-      setMsg("已從當日事件／證據產生草稿");
+      setMsg(t("diary.draftOk"));
       await load();
     }
   }
@@ -89,9 +99,9 @@ export default function DailyReportsPage() {
     if (!report) return;
     setBusy(true);
     const plans = safeJsonParse<string[]>(report.tomorrowPlanJson, []).filter(
-      (p) => !p.startsWith("備註："),
+      (p) => !isRemarksPlanLine(p),
     );
-    if (remarks.trim()) plans.unshift(`備註：${remarks.trim()}`);
+    if (remarks.trim()) plans.unshift(`${t("diary.remarksPrefix")}${remarks.trim()}`);
     const res = await fetch("/api/daily-reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -105,10 +115,10 @@ export default function DailyReportsPage() {
     });
     setBusy(false);
     if (res.ok) {
-      setMsg("已儲存天氣／人手／備註");
+      setMsg(t("diary.savedMeta"));
       await load();
     } else {
-      setMsg("儲存失敗");
+      setMsg(t("diary.saveFail"));
     }
   }
 
@@ -123,11 +133,11 @@ export default function DailyReportsPage() {
     setBusy(false);
     const data = await res.json();
     if (res.ok) {
-      setMsg(data.narrative || "已一鍵產生 Word + PDF");
+      setMsg(data.narrative || t("diary.genOk"));
       if (data.exports?.[0]?.filePath) window.open(data.exports[0].filePath, "_blank");
       await load();
     } else {
-      setMsg(data.error || "產生失敗");
+      setMsg(data.error || t("diary.genFail"));
     }
   }
 
@@ -142,7 +152,7 @@ export default function DailyReportsPage() {
     setBusy(false);
     const data = await res.json();
     if (data.filePath) {
-      setMsg("已匯出 Word／PDF");
+      setMsg(t("diary.exportOk"));
       window.open(data.filePath, "_blank");
       await load();
     }
@@ -151,18 +161,18 @@ export default function DailyReportsPage() {
   async function copyShare() {
     const base = diary?.shareText || "";
     const extra = [
-      weather ? `天氣：${weather}` : "",
-      workers ? `人手：${workers}` : "",
-      remarks ? `備註：${remarks}` : "",
+      weather ? t("diary.shareWeather", { v: weather }) : "",
+      workers ? t("diary.shareManpower", { v: workers }) : "",
+      remarks ? t("diary.shareNotes", { v: remarks }) : "",
     ]
       .filter(Boolean)
       .join("\n");
     const text = [base, extra].filter(Boolean).join("\n");
     try {
       await navigator.clipboard.writeText(text);
-      setMsg("已複製日記摘要，可貼到 WhatsApp");
+      setMsg(t("diary.copied"));
     } catch {
-      setMsg("複製失敗");
+      setMsg(t("common.copyFail"));
     }
   }
 
@@ -178,22 +188,22 @@ export default function DailyReportsPage() {
       >(report.issuesJson, [])
     : [];
   const plans = report
-    ? safeJsonParse<string[]>(report.tomorrowPlanJson, []).filter((p) => !p.startsWith("備註："))
+    ? safeJsonParse<string[]>(report.tomorrowPlanJson, []).filter((p) => !isRemarksPlanLine(p))
     : [];
 
   useEffect(() => {
     if (!report) return;
     const all = safeJsonParse<string[]>(report.tomorrowPlanJson, []);
-    const note = all.find((p) => p.startsWith("備註："));
-    setRemarks(note ? note.replace(/^備註：/, "") : "");
+    const note = all.find((p) => isRemarksPlanLine(p));
+    setRemarks(note ? stripRemarksPrefix(note) : "");
   }, [report]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="axon-title text-2xl font-semibold">日報／軟日記</h1>
-          <p className="text-sm axon-muted">當日開／關／逾期一覽 → 分享或一鍵出報</p>
+          <h1 className="axon-title text-2xl font-semibold">{t("diary.title")}</h1>
+          <p className="text-sm axon-muted">{t("diary.subtitle")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -203,58 +213,58 @@ export default function DailyReportsPage() {
             className="axon-input w-auto"
           />
           <button disabled={busy} onClick={copyShare} className="axon-btn axon-btn-ghost">
-            複製 WhatsApp 摘要
+            {t("diary.copyWa")}
           </button>
           <button disabled={busy} onClick={oneClick} className="axon-btn axon-btn-primary">
-            一鍵 Word＋PDF
+            {t("diary.oneClick")}
           </button>
           <button disabled={busy} onClick={generate} className="axon-btn axon-btn-ghost">
-            僅草稿
+            {t("diary.draftOnly")}
           </button>
           <button
             disabled={busy || !report}
             onClick={exportReport}
             className="axon-btn axon-btn-ghost"
           >
-            匯出草稿
+            {t("diary.exportDraft")}
           </button>
         </div>
       </div>
       {msg && <p className="text-sm text-emerald-600">{msg}</p>}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="今日新開" value={diary?.opened ?? "—"} />
-        <KpiCard label="今日關閉" value={diary?.closed ?? "—"} />
-        <KpiCard label="目前逾期" value={diary?.overdue ?? "—"} />
-        <KpiCard label="未關安全" value={diary?.openSafety ?? "—"} />
+        <KpiCard label={t("diary.opened")} value={diary?.opened ?? t("common.none")} />
+        <KpiCard label={t("diary.closed")} value={diary?.closed ?? t("common.none")} />
+        <KpiCard label={t("diary.overdue")} value={diary?.overdue ?? t("common.none")} />
+        <KpiCard label={t("diary.safetyOpen")} value={diary?.openSafety ?? t("common.none")} />
       </div>
 
       <section className="axon-panel grid gap-3 p-4 sm:grid-cols-4">
         <label className="text-xs text-slate-500">
-          天氣
+          {t("diary.weather")}
           <input
             className="axon-input mt-1"
             value={weather}
             onChange={(e) => setWeather(e.target.value)}
-            placeholder="晴／雨…"
+            placeholder={t("diary.weatherPh")}
           />
         </label>
         <label className="text-xs text-slate-500">
-          人手
+          {t("diary.manpower")}
           <input
             className="axon-input mt-1"
             value={workers}
             onChange={(e) => setWorkers(e.target.value)}
-            placeholder="人數"
+            placeholder={t("diary.workersPh")}
           />
         </label>
         <label className="text-xs text-slate-500 sm:col-span-2">
-          備註
+          {t("diary.notes")}
           <input
             className="axon-input mt-1"
             value={remarks}
             onChange={(e) => setRemarks(e.target.value)}
-            placeholder="可選"
+            placeholder={t("diary.notesPh")}
           />
         </label>
         <button
@@ -263,13 +273,13 @@ export default function DailyReportsPage() {
           onClick={saveMeta}
           className="axon-btn axon-btn-ghost sm:col-span-4 sm:w-fit"
         >
-          儲存天氣／人手／備註
+          {t("diary.saveMeta")}
         </button>
       </section>
 
       {diary && diary.photos.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-sm font-semibold">當日現場照片</h2>
+          <h2 className="text-sm font-semibold">{t("diary.photos")}</h2>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
             {diary.photos.map((p) =>
               p.href ? (
@@ -289,22 +299,22 @@ export default function DailyReportsPage() {
 
       {!report ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-          此日期尚無正式日報草稿。上方日記數字已可分享；點「一鍵 Word＋PDF」可出完整報告。
+          {t("diary.emptyDraft")}
         </div>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <KpiCard label="天氣" value={report.weather || "—"} />
-            <KpiCard label="工人數" value={report.workerCount} />
-            <KpiCard label="分判商" value={report.subcontractorCount} />
-            <KpiCard label="安全事件" value={report.safetyEvents} />
-            <KpiCard label="進度完成" value={`${report.progressPct}%`} />
+            <KpiCard label={t("diary.weather")} value={report.weather || t("common.none")} />
+            <KpiCard label={t("diary.workerCount")} value={report.workerCount} />
+            <KpiCard label={t("diary.subCount")} value={report.subcontractorCount} />
+            <KpiCard label={t("diary.safetyEvents")} value={report.safetyEvents} />
+            <KpiCard label={t("diary.progress")} value={`${report.progressPct}%`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="rounded-xl border bg-white p-5">
               <h2 className="mb-3 text-sm font-semibold">
-                主要活動時間線 · {formatDay(report.date)}
+                {t("diary.timeline", { date: formatDay(report.date) })}
               </h2>
               <ol className="space-y-3 border-l border-slate-200 pl-4">
                 {activities.map((a, i) => (
@@ -315,7 +325,7 @@ export default function DailyReportsPage() {
                     <span
                       className={cn(
                         "mt-1 inline-block rounded-full px-2 py-0.5 text-[10px]",
-                        a.status === "完成"
+                        a.status === "完成" || a.status === "Done"
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-sky-100 text-sky-700",
                       )}
@@ -328,15 +338,15 @@ export default function DailyReportsPage() {
             </section>
 
             <section className="rounded-xl border bg-white p-5">
-              <h2 className="mb-3 text-sm font-semibold">問題與跟進</h2>
+              <h2 className="mb-3 text-sm font-semibold">{t("diary.issues")}</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="text-xs text-slate-500">
                     <tr>
-                      <th className="py-2">問題</th>
-                      <th>風險</th>
-                      <th>負責人</th>
-                      <th>狀態</th>
+                      <th className="py-2">{t("diary.issue")}</th>
+                      <th>{t("diary.risk")}</th>
+                      <th>{t("common.assignee")}</th>
+                      <th>{t("common.status")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -346,7 +356,7 @@ export default function DailyReportsPage() {
                           <div className="font-medium">{i.issue}</div>
                           <div className="text-xs text-slate-400">{i.id}</div>
                         </td>
-                        <td>{SEVERITY_LABELS[i.risk] || i.risk}</td>
+                        <td>{severityLabels[i.risk] || i.risk}</td>
                         <td>{i.assignee}</td>
                         <td>
                           <span
@@ -355,7 +365,7 @@ export default function DailyReportsPage() {
                               STATUS_COLORS[i.status],
                             )}
                           >
-                            {CASE_STATUS_LABELS[i.status] || i.status}
+                            {caseStatusLabels[i.status] || i.status}
                           </span>
                         </td>
                       </tr>
@@ -363,7 +373,7 @@ export default function DailyReportsPage() {
                   </tbody>
                 </table>
               </div>
-              <h3 className="mb-2 mt-6 text-sm font-semibold">明日計劃</h3>
+              <h3 className="mb-2 mt-6 text-sm font-semibold">{t("diary.plans")}</h3>
               <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
                 {plans.map((p, idx) => (
                   <li key={idx}>{p}</li>
@@ -371,7 +381,7 @@ export default function DailyReportsPage() {
               </ul>
               {report.exports && report.exports.length > 0 && (
                 <div className="mt-4 border-t pt-3">
-                  <div className="text-xs font-semibold text-slate-500">已匯出</div>
+                  <div className="text-xs font-semibold text-slate-500">{t("diary.exported")}</div>
                   {report.exports.map((e) => (
                     <a
                       key={e.id}

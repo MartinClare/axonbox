@@ -1,8 +1,10 @@
 import type { UiLocale } from "./types";
+import { chromeEn, chromeZh } from "./ui-chrome";
 
 type Dict = Record<string, string>;
 
 const zh: Dict = {
+  ...chromeZh,
   "nav.group.ops": "日常作業",
   "nav.group.records": "記錄與輸出",
   "nav.group.base": "基礎資料",
@@ -151,6 +153,7 @@ const zh: Dict = {
 };
 
 const en: Dict = {
+  ...chromeEn,
   "nav.group.ops": "Daily work",
   "nav.group.records": "Records & output",
   "nav.group.base": "Setup",

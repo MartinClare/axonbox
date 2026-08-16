@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
 import {
   type CaseLoopNextAction,
   type CaseLoopStep,
@@ -16,6 +17,7 @@ export function CaseLoopStepper({
   compact?: boolean;
   className?: string;
 }) {
+  const { t } = useI18n();
   if (compact) {
     return (
       <div className={cn("flex items-center gap-1", className)} title={steps.map((s) => s.label).join(" → ")}>
@@ -28,7 +30,7 @@ export function CaseLoopStepper({
                 s.current && !s.done && "bg-[var(--axon-blue)] ring-2 ring-[var(--axon-blue)]/30",
                 !s.done && !s.current && "bg-slate-200",
               )}
-              aria-label={`${s.label}${s.done ? "（完成）" : s.current ? "（進行中）" : ""}`}
+              aria-label={`${s.label}${s.done ? t("loop.doneAria") : s.current ? t("loop.currentAria") : ""}`}
             />
             {i < steps.length - 1 && <span className="h-px w-2 bg-slate-200" />}
           </span>
@@ -87,7 +89,8 @@ export function CaseLoopNextPanel({
   onAction: (action: CaseLoopNextAction) => void;
   className?: string;
 }) {
-  const copy = nextActionCopy(action);
+  const { locale } = useI18n();
+  const copy = nextActionCopy(action, locale);
   if (!copy.cta) return null;
 
   return (

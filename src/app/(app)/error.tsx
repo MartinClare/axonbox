@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useI18n } from "@/components/I18nProvider";
 
 export default function AppError({
   error,
@@ -9,21 +10,22 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mx-auto max-w-lg space-y-4 py-16 text-center">
-      <h1 className="axon-title text-xl font-semibold">頁面暫時無法載入</h1>
+      <h1 className="axon-title text-xl font-semibold">{t("error.appTitle")}</h1>
       <p className="text-sm axon-muted">
-        {error?.message?.slice(0, 160) || "發生未預期錯誤，請重試或重新登入。"}
+        {error?.message?.slice(0, 160) || t("error.appBody")}
       </p>
       <div className="flex flex-wrap justify-center gap-2">
         <button type="button" onClick={reset} className="axon-btn axon-btn-primary">
-          重試
+          {t("error.retry")}
         </button>
         <Link href="/" className="axon-btn axon-btn-ghost">
-          回總覽
+          {t("error.home")}
         </Link>
         <Link href="/login" className="axon-btn axon-btn-ghost">
-          重新登入
+          {t("error.login")}
         </Link>
       </div>
     </div>

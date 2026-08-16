@@ -7,10 +7,11 @@ import {
   APP_DEMO_EMAIL,
   APP_DEMO_PASSWORD,
   APP_NAME,
-  APP_TAGLINE,
 } from "@/lib/brand";
+import { useI18n } from "@/components/I18nProvider";
 
 export default function LoginPage() {
+  const { t } = useI18n();
   const [email, setEmail] = useState(APP_DEMO_EMAIL);
   const [password, setPassword] = useState(APP_DEMO_PASSWORD);
   const [error, setError] = useState("");
@@ -23,7 +24,7 @@ export default function LoginPage() {
     setOrigin(window.location.origin);
     const sp = new URLSearchParams(window.location.search);
     if (sp.get("reason") === "stale") {
-      setError("登入狀態已失效，請重新登入");
+      setError(t("login.err.stale"));
     }
     const cb = sp.get("callbackUrl");
     if (cb && cb.startsWith("/")) setCallbackUrl(cb);
@@ -43,7 +44,7 @@ export default function LoginPage() {
       cancelled = true;
       clearInterval(id);
     };
-  }, []);
+  }, [t]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -57,12 +58,12 @@ export default function LoginPage() {
         redirect: false,
       });
       if (res?.error || !res?.ok) {
-        setError("登入失敗，請檢查帳號密碼");
+        setError(t("login.err.fail"));
         return;
       }
       window.location.assign(callbackUrl || "/");
     } catch {
-      setError("無法連線伺服器，請在電腦執行 npm run start:stable");
+      setError(t("login.err.offline"));
       setServerOk(false);
     } finally {
       setLoading(false);
@@ -95,9 +96,9 @@ export default function LoginPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
             {APP_NAME}
           </h1>
-          <p className="mt-2 text-sm text-white/60">{APP_TAGLINE}</p>
+          <p className="mt-2 text-sm text-white/60">{t("meta.tagline")}</p>
           <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--axon-signal)]">
-            Field · Permit · Evidence
+            {t("login.badge")}
           </p>
         </div>
 
@@ -106,7 +107,7 @@ export default function LoginPage() {
           <form onSubmit={onSubmit} className="space-y-4 p-6 sm:p-8">
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-[var(--axon-ink)]/70">
-                電郵
+                {t("login.email")}
               </label>
               <input
                 className="axon-input"
@@ -119,7 +120,7 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-[var(--axon-ink)]/70">
-                密碼
+                {t("login.password")}
               </label>
               <input
                 className="axon-input"
@@ -132,7 +133,7 @@ export default function LoginPage() {
             </div>
             {serverOk === false && (
               <p className="rounded-xl border border-[var(--axon-accent)]/30 bg-[var(--axon-signal)]/25 px-3 py-2 text-xs text-[var(--axon-ink)]">
-                伺服器未回應。請執行{" "}
+                {t("login.serverDown")}{" "}
                 <code className="rounded bg-white/70 px-1">npm run start:daemon</code>
               </p>
             )}
@@ -141,7 +142,7 @@ export default function LoginPage() {
               disabled={loading || serverOk === false}
               className="axon-btn axon-btn-accent w-full"
             >
-              {loading ? "登入中…" : "進入平台"}
+              {loading ? t("login.submitting") : t("login.submit")}
             </button>
           </form>
           <div className="border-t border-[var(--axon-line)] bg-[var(--axon-sand)]/60 px-6 py-4 text-center sm:px-8">
@@ -149,14 +150,15 @@ export default function LoginPage() {
               {APP_DEMO_EMAIL} / {APP_DEMO_PASSWORD}
             </p>
             <p className="mt-2 break-all text-xs text-[var(--axon-ink)]/55">
-              開啟：<span className="font-semibold text-[var(--axon-ink)]">{origin}</span>
+              {t("login.openAt")}{" "}
+              <span className="font-semibold text-[var(--axon-ink)]">{origin}</span>
             </p>
             <div className="mt-3 flex justify-center gap-4 text-xs font-semibold">
               <Link href="/install" className="text-[var(--axon-accent)] hover:underline">
-                安裝手機 App
+                {t("login.installApp")}
               </Link>
               <Link href="/open" className="text-[var(--axon-ink)] hover:underline">
-                開啟方式
+                {t("login.openGuide")}
               </Link>
             </div>
           </div>

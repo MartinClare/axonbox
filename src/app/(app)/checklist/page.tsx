@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CheckSquare, Loader2, Play } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
 
 type Item = { id: string; text: string; required?: boolean; checked?: boolean; note?: string };
 type Template = {
@@ -25,6 +26,7 @@ type Run = {
 };
 
 export default function ChecklistPage() {
+  const { t } = useI18n();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [active, setActive] = useState<Run | null>(null);
@@ -87,7 +89,7 @@ export default function ChecklistPage() {
       return;
     }
     setActive(res.data!);
-    setMsg(complete ? "已完成點檢" : "已儲存");
+    setMsg(complete ? t("checklist.doneInspect") : t("common.saved"));
     await load();
   }
 
@@ -117,68 +119,74 @@ export default function ChecklistPage() {
     }
     setActive(res.data!.run);
     if (result === "PASS") {
-      setMsg("已判定通過，並留下點檢紀錄");
+      setMsg(t("checklist.passOk"));
     } else if (res.data?.case?.id) {
       setCreatedCaseId(res.data.case.id);
-      setMsg(`不合格：已建立事件 ${res.data.case.caseNo}`);
+      setMsg(t("checklist.failCase", { caseNo: res.data.case.caseNo }));
     } else {
-      setMsg("已判定不合格");
+      setMsg(t("checklist.failOk"));
     }
     await load();
   }
 
   const doneCount = items.filter((i) => i.checked).length;
-  const finished =
-    active && ["DONE", "PASSED", "FAILED"].includes(active.status);
+  const finished = active && ["DONE", "PASSED", "FAILED"].includes(active.status);
+
+  function statusLabel(status: string) {
+    if (status === "PASSED") return t("common.pass");
+    if (status === "FAILED") return t("common.fail");
+    if (status === "DONE") return t("common.done");
+    return t("common.inProgress");
+  }
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="axon-title text-2xl font-semibold">現場 Checklist</h1>
-        <p className="mt-1 text-sm axon-muted">
-          請檢查 → 勾選 → Pass／Fail（Fail 自動開事件）
-        </p>
+        <h1 className="axon-title text-2xl font-semibold">{t("checklist.title")}</h1>
+        <p className="mt-1 text-sm axon-muted">{t("checklist.subtitle")}</p>
         {msg && <p className="mt-1 text-sm text-emerald-700">{msg}</p>}
         {createdCaseId && (
           <Link href={`/cases/${createdCaseId}`} className="mt-1 inline-block text-sm text-[var(--axon-blue)]">
-            前往事件 →
+            {t("checklist.goCase")}
           </Link>
         )}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold">點檢模板</h2>
-          {templates.map((t) => {
-            const count = JSON.parse(t.itemsJson || "[]").length;
+          <h2 className="text-sm font-semibold">{t("checklist.templates")}</h2>
+          {templates.map((tpl) => {
+            const count = JSON.parse(tpl.itemsJson || "[]").length;
             return (
-              <div key={t.id} className="axon-panel p-4">
+              <div key={tpl.id} className="axon-panel p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-medium text-[var(--axon-ink)]">{t.name}</div>
-                    <p className="mt-1 text-xs text-slate-500">{t.description}</p>
-                    {t.sourceRef && (
-                      <p className="mt-1 text-[11px] text-slate-400">依據：{t.sourceRef}</p>
+                    <div className="font-medium text-[var(--axon-ink)]">{tpl.name}</div>
+                    <p className="mt-1 text-xs text-slate-500">{tpl.description}</p>
+                    {tpl.sourceRef && (
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {t("checklist.basis", { ref: tpl.sourceRef })}
+                      </p>
                     )}
-                    <p className="mt-1 text-xs text-slate-400">{count} 項</p>
+                    <p className="mt-1 text-xs text-slate-400">{t("checklist.items", { n: count })}</p>
                   </div>
                   <button
                     disabled={busy}
-                    onClick={() => start(t.id)}
+                    onClick={() => start(tpl.id)}
                     className="axon-btn axon-btn-primary shrink-0"
                   >
                     <Play size={14} />
-                    請檢查
+                    {t("checklist.start")}
                   </button>
                 </div>
               </div>
             );
           })}
           {!templates.length && (
-            <p className="text-sm text-slate-400">尚無模板（請執行資料庫 seed）</p>
+            <p className="text-sm text-slate-400">{t("checklist.noTemplates")}</p>
           )}
 
-          <h2 className="pt-2 text-sm font-semibold">最近記錄</h2>
+          <h2 className="pt-2 text-sm font-semibold">{t("checklist.recent")}</h2>
           <div className="axon-panel divide-y">
             {runs.map((r) => (
               <button
@@ -205,13 +213,7 @@ export default function ChecklistPage() {
                         : "bg-amber-100 text-amber-700",
                   )}
                 >
-                  {r.status === "PASSED"
-                    ? "通過"
-                    : r.status === "FAILED"
-                      ? "不合格"
-                      : r.status === "DONE"
-                        ? "完成"
-                        : "進行中"}
+                  {statusLabel(r.status)}
                 </span>
               </button>
             ))}
@@ -222,7 +224,7 @@ export default function ChecklistPage() {
           {!active ? (
             <div className="flex min-h-[320px] flex-col items-center justify-center text-center text-sm text-slate-500">
               <CheckSquare className="mb-2 text-slate-300" />
-              選擇模板開始現場點檢
+              {t("checklist.pick")}
             </div>
           ) : (
             <div className="space-y-4">
@@ -252,7 +254,7 @@ export default function ChecklistPage() {
                     <span className="text-sm">
                       {item.text}
                       {item.required && (
-                        <span className="ml-1 text-[10px] text-rose-500">必填</span>
+                        <span className="ml-1 text-[10px] text-rose-500">{t("common.required")}</span>
                       )}
                     </span>
                   </label>
@@ -261,7 +263,7 @@ export default function ChecklistPage() {
               <textarea
                 className="axon-input text-sm"
                 rows={2}
-                placeholder="備註（可選）"
+                placeholder={t("checklist.notesOpt")}
                 value={note}
                 disabled={Boolean(finished)}
                 onChange={(e) => setNote(e.target.value)}
@@ -270,28 +272,30 @@ export default function ChecklistPage() {
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <button disabled={busy} onClick={() => save(false)} className="axon-btn axon-btn-ghost">
                     {busy ? <Loader2 className="animate-spin" size={14} /> : null}
-                    儲存
+                    {t("common.save")}
                   </button>
                   <button disabled={busy} onClick={() => save(true)} className="axon-btn axon-btn-ghost">
-                    僅完成
+                    {t("checklist.completeOnly")}
                   </button>
                   <button
                     disabled={busy}
                     onClick={() => inspectResult("PASS")}
                     className="axon-btn axon-btn-ok"
                   >
-                    Pass
+                    {t("common.pass")}
                   </button>
                   <button
                     disabled={busy}
                     onClick={() => inspectResult("FAIL")}
                     className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
                   >
-                    Fail
+                    {t("common.fail")}
                   </button>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">此點檢已結束（{active.status}）</p>
+                <p className="text-sm text-slate-500">
+                  {t("checklist.ended", { status: active.status })}
+                </p>
               )}
             </div>
           )}
