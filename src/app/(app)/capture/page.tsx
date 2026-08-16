@@ -12,6 +12,10 @@ import {
   CheckCircle2,
   MessageSquare,
   Mic,
+  NotebookPen,
+  Search,
+  X,
+  Archive,
 } from "lucide-react";
 import {
   CATEGORY_LABELS,
@@ -20,6 +24,7 @@ import {
   cn,
 } from "@/lib/labels";
 import { isProbablyImage, isBrowserUnsupportedImage } from "@/lib/media";
+import { apiFetch } from "@/lib/api-client";
 
 type Finding = {
   type: string;
@@ -41,10 +46,17 @@ type ExtractResult = {
   siteSummary: string;
   confidence: number;
   mock: boolean;
+  tags?: string[];
+  analysisMode?: "record" | "discover";
 };
 
 type PersonOpt = { id: string; name: string; role: string };
 type CompanyOpt = { id: string; name: string; contact: string | null; trade: string | null };
+type AnalysisMode = "record" | "discover";
+
+function normalizeTag(raw: string) {
+  return raw.replace(/^#/, "").trim();
+}
 
 export default function CapturePage() {
   const router = useRouter();
@@ -54,12 +66,18 @@ export default function CapturePage() {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<ExtractResult | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [busyMode, setBusyMode] = useState<AnalysisMode | null>(null);
   const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
   const [people, setPeople] = useState<PersonOpt[]>([]);
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [assigneeId, setAssigneeId] = useState("");
   const [subcontractorId, setSubcontractorId] = useState("");
+  const lastAnalysis = useRef<AnalysisMode>("discover");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -69,11 +87,15 @@ export default function CapturePage() {
         setCompanies(d.subcontractors || []);
       })
       .catch(() => undefined);
+    apiFetch<{ tags?: string[] }>("/api/evidence?suggestTags=1").then((res) => {
+      if (res.ok) setSuggestedTags(res.data?.tags || []);
+    });
   }, []);
 
   function onFile(f: File | null) {
     setFile(f);
     setResult(null);
+    setTags([]);
     setError("");
     if (preview) URL.revokeObjectURL(preview);
     if (!f) {
@@ -83,7 +105,6 @@ export default function CapturePage() {
     if (isBrowserUnsupportedImage(f)) {
       setPreview(null);
       setError("目前瀏覽器無法預覽 HEIC。請改用 JPG／PNG（手機可先用「最相容」拍照），AI 仍可嘗試分析。");
-      // still keep file for AI if OpenRouter accepts it
       return;
     }
     if (isProbablyImage(f)) {
@@ -93,19 +114,61 @@ export default function CapturePage() {
     }
   }
 
-  async function extract() {
+  function addTag(raw: string) {
+    const t = normalizeTag(raw);
+    if (!t) return;
+    setTags((prev) => (prev.includes(t) ? prev : [...prev, t].slice(0, 20)));
+    setTagDraft("");
+  }
+
+  function removeTag(t: string) {
+    setTags((prev) => prev.filter((x) => x !== t));
+  }
+
+  async function extract(analysisMode: AnalysisMode) {
     setBusy(true);
+    setBusyMode(analysisMode);
     setError("");
+    lastAnalysis.current = analysisMode;
     const form = new FormData();
     form.set("text", text);
+    form.set("analysisMode", analysisMode);
     if (file) form.set("file", file);
     const res = await fetch("/api/ai/extract", { method: "POST", body: form });
     setBusy(false);
+    setBusyMode(null);
     if (!res.ok) {
-      setError("\u5206\u6790\u5931\u6557\uff0c\u8acb\u91cd\u8a66");
+      setError("分析失敗，請重試");
       return;
     }
-    setResult(await res.json());
+    const data = (await res.json()) as ExtractResult;
+    setResult(data);
+    setTags(Array.isArray(data.tags) ? data.tags.map(normalizeTag).filter(Boolean) : []);
+  }
+
+  async function saveEvidenceOnly() {
+    if (!file && !text) return;
+    setBusy(true);
+    setError("");
+    const form = new FormData();
+    form.set("source", mode === "chat" ? "WHATSAPP_IMPORT" : "UPLOAD");
+    form.set("title", result?.title || file?.name || "現場記錄");
+    form.set("chatText", text);
+    form.set("tagsJson", JSON.stringify(tags));
+    form.set("skipAi", "1");
+    if (result) form.set("aiJson", JSON.stringify({ ...result, tags }));
+    if (file) form.set("file", file);
+    const evRes = await fetch("/api/evidence", { method: "POST", body: form });
+    setBusy(false);
+    if (!evRes.ok) {
+      setError("儲存證據失敗");
+      return;
+    }
+    setMsg("已存入證據庫");
+    setTimeout(() => setMsg(""), 2500);
+    apiFetch<{ tags?: string[] }>("/api/evidence?suggestTags=1").then((res) => {
+      if (res.ok) setSuggestedTags(res.data?.tags || []);
+    });
   }
 
   async function createCase() {
@@ -116,6 +179,9 @@ export default function CapturePage() {
     form.set("source", mode === "chat" ? "WHATSAPP_IMPORT" : "UPLOAD");
     form.set("title", result.title);
     form.set("chatText", text);
+    form.set("tagsJson", JSON.stringify(tags));
+    form.set("skipAi", "1");
+    form.set("aiJson", JSON.stringify({ ...result, tags }));
     if (file) form.set("file", file);
     const evRes = await fetch("/api/evidence", { method: "POST", body: form });
     if (evRes.ok) {
@@ -143,12 +209,15 @@ export default function CapturePage() {
     });
     setBusy(false);
     if (!res.ok) {
-      setError("\u5efa\u7acb\u4e8b\u4ef6\u5931\u6557");
+      setError("建立事件失敗");
       return;
     }
     const created = await res.json();
     router.push(`/cases/${created.id}`);
   }
+
+  const isRecord = (result?.analysisMode || lastAnalysis.current) === "record";
+  const suggestable = suggestedTags.filter((t) => !tags.includes(t)).slice(0, 8);
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -157,19 +226,17 @@ export default function CapturePage() {
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--axon-steel)]">
             Site Vision
           </p>
-          <h1 className="axon-title mt-1 text-3xl font-semibold">
-            {"\u62cd\u4e00\u5f35\uff0c\u770b\u6e05\u5834\u5730"}
-          </h1>
+          <h1 className="axon-title mt-1 text-3xl font-semibold">拍一張，看清場地</h1>
           <p className="axon-muted mt-2 max-w-xl text-sm leading-relaxed">
-            {"AI \u8b58\u5225\u5b89\u5168\u6f0f\u6d1e\u3001\u8cea\u91cf\u554f\u984c\u8207\u9032\u5ea6\u7d04\u6578\uff0c\u4e00\u9375\u8f49\u6210\u53ef\u8ffd\u8e64\u4e8b\u4ef6\u3002"}
+            記錄現況或發現問題：AI 會自動標籤，也可一鍵建立可追蹤事件。
           </p>
         </div>
         <div className="flex gap-1 rounded-full border border-[var(--axon-line)] bg-white/80 p-1">
           {(
             [
-              ["photo", "\u7167\u7247", Camera],
-              ["chat", "\u8a0a\u606f", MessageSquare],
-              ["voice", "\u8a9e\u97f3", Mic],
+              ["photo", "照片", Camera],
+              ["chat", "訊息", MessageSquare],
+              ["voice", "語音", Mic],
             ] as const
           ).map(([k, label, Icon]) => (
             <button
@@ -179,7 +246,7 @@ export default function CapturePage() {
                 "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm transition",
                 mode === k
                   ? "bg-[var(--axon-navy)] text-white"
-                  : "text-slate-600 hover:bg-slate-50"
+                  : "text-slate-600 hover:bg-slate-50",
               )}
             >
               <Icon size={14} />
@@ -190,20 +257,15 @@ export default function CapturePage() {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        {/* Left: capture */}
         <section className="axon-panel overflow-hidden">
           <div className="border-b border-[var(--axon-line)] px-5 py-4">
             <h2 className="text-sm font-semibold text-[var(--axon-ink)]">
-              {mode === "photo"
-                ? "\u73fe\u5834\u7167\u7247"
-                : mode === "chat"
-                  ? "\u8a0a\u606f\u532f\u5165"
-                  : "\u8a9e\u97f3\u8a18\u9304"}
+              {mode === "photo" ? "現場照片" : mode === "chat" ? "訊息匯入" : "語音記錄"}
             </h2>
             <p className="axon-muted mt-0.5 text-xs">
               {mode === "photo"
-                ? "\u652f\u6301\u76f4\u63a5\u62cd\u651d\u6216\u5f9e\u76f8\u7c3f\u9078\u53d6"
-                : "\u53ef\u52a0\u8aaa\u660e\u4f4d\u7f6e\u3001\u5de5\u5e8f\u6216\u98a8\u96aa\u9ede"}
+                ? "支援直接拍攝或從相簿選取 · 記錄現況／發現問題"
+                : "可加說明位置、工序或風險點"}
             </p>
           </div>
 
@@ -226,17 +288,15 @@ export default function CapturePage() {
                     <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 backdrop-blur">
                       <ImagePlus size={22} />
                     </div>
-                    <div className="text-base font-medium">
-                      {"\u9ede\u64ca\u62cd\u651d\u6216\u4e0a\u50b3"}
-                    </div>
+                    <div className="text-base font-medium">點擊拍攝或上傳</div>
                     <div className="mt-1 text-xs text-white/70">
-                      JPG / PNG / WebP · {"\u5efa\u8b70\u7784\u6e96\u6f0f\u6d1e\u8207\u4f5c\u696d\u9762"}
+                      JPG / PNG / WebP · 建議對準作業面
                     </div>
                   </>
                 )}
                 {preview && (
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 text-left text-xs">
-                    {"\u9ede\u64ca\u66f4\u63db\u7167\u7247"}
+                    點擊更換照片
                   </div>
                 )}
               </button>
@@ -259,53 +319,76 @@ export default function CapturePage() {
                   className="inline-flex items-center gap-2 rounded-full bg-[var(--axon-navy)] px-4 py-2 text-sm text-white"
                 >
                   <Mic size={14} />
-                  {"\u4e0a\u50b3\u8a9e\u97f3"}
+                  上傳語音
                 </button>
-                {file && (
-                  <p className="axon-muted mt-3 text-xs">{file.name}</p>
-                )}
+                {file && <p className="axon-muted mt-3 text-xs">{file.name}</p>}
               </div>
             )}
 
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-500">
-                {mode === "chat"
-                  ? "WhatsApp / \u8a0a\u606f\u5167\u5bb9"
-                  : "\u88dc\u5145\u8aaa\u660e\uff08\u53ef\u9078\uff09"}
+                {mode === "chat" ? "WhatsApp / 訊息內容" : "補充說明（可選）"}
               </label>
               <textarea
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3.5 py-3 text-sm outline-none ring-[var(--axon-steel)]/20 focus:ring-2"
                 rows={mode === "chat" ? 7 : 3}
                 placeholder={
                   mode === "chat"
-                    ? "[10:21] \u73fe\u5834\u4e3b\u7ba1\uff1aB\u5340\u4e94\u6a13\u570d\u6b04\u672a\u88dd"
-                    : "\u4f8b\u5982\uff1aB\u53405\u6a13\u5e73\u53f0\u3001\u6a21\u677f\u4f5c\u696d"
+                    ? "[10:21] 現場主管：B區五樓圍欄未裝"
+                    : "例如：B區5樓平台、模板作業"
                 }
                 value={text}
                 onChange={(e) => setText(e.target.value)}
               />
             </div>
 
-            <button
-              disabled={busy || (!file && !text)}
-              onClick={extract}
-              className="axon-btn axon-btn-primary w-full"
-            >
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
-              {busy ? "AI \u5206\u6790\u4e2d\u2026" : "\u958b\u59cb\u5206\u6790"}
-            </button>
+            {mode === "photo" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  disabled={busy || (!file && !text)}
+                  onClick={() => extract("record")}
+                  className="axon-btn axon-btn-ghost w-full"
+                >
+                  {busyMode === "record" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <NotebookPen size={16} />
+                  )}
+                  {busyMode === "record" ? "記錄中…" : "記錄現況"}
+                </button>
+                <button
+                  disabled={busy || (!file && !text)}
+                  onClick={() => extract("discover")}
+                  className="axon-btn axon-btn-primary w-full"
+                >
+                  {busyMode === "discover" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Search size={16} />
+                  )}
+                  {busyMode === "discover" ? "分析中…" : "發現問題"}
+                </button>
+              </div>
+            ) : (
+              <button
+                disabled={busy || (!file && !text)}
+                onClick={() => extract("discover")}
+                className="axon-btn axon-btn-primary w-full"
+              >
+                {busy ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                {busy ? "AI 分析中…" : "開始分析"}
+              </button>
+            )}
             {error && <p className="text-sm text-rose-600">{error}</p>}
+            {msg && <p className="text-sm text-emerald-700">{msg}</p>}
           </div>
         </section>
 
-        {/* Right: insights */}
         <section className="axon-panel overflow-hidden">
           <div className="border-b border-[var(--axon-line)] px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">
-              {"\u5206\u6790\u7d50\u679c"}
-            </h2>
+            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">分析結果</h2>
             <p className="axon-muted mt-0.5 text-xs">
-              {"\u6f0f\u6d1e \u00b7 \u9032\u5ea6 \u00b7 \u5efa\u8b70\u52d5\u4f5c"}
+              {isRecord ? "現況摘要 · 標籤 · 可存檔或建事件" : "漏洞 · 進度 · 建議動作"}
             </p>
           </div>
 
@@ -315,35 +398,39 @@ export default function CapturePage() {
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-[var(--axon-steel)]">
                   <ShieldAlert size={20} />
                 </div>
-                <p className="text-sm font-medium text-slate-700">
-                  {"\u4e0a\u50b3\u7167\u7247\u5f8c\uff0c\u9019\u88e1\u6703\u51fa\u73fe"}
-                </p>
+                <p className="text-sm font-medium text-slate-700">上傳照片後，選擇分析方式</p>
                 <ul className="axon-muted mt-3 space-y-1 text-xs">
-                  <li>{"\u00b7 \u5b89\u5168\u6f0f\u6d1e\uff08\u570d\u6b04\u3001\u6d1e\u53e3\u3001PPE\uff09"}</li>
-                  <li>{"\u00b7 \u8cea\u91cf\u7f3a\u9677\uff08\u92fc\u7b4b\u3001\u88c2\u7e2b\uff09"}</li>
-                  <li>{"\u00b7 \u9032\u5ea6\u4f30\u7b97\uff08\u53ef\u898b\u5b8c\u6210\u5ea6\uff09"}</li>
+                  <li>· 記錄現況：存檔工序與進度，不硬找缺陷</li>
+                  <li>· 發現問題：安全／質量／進度風險</li>
+                  <li>· 自動標籤，可自行增刪如 IG</li>
                 </ul>
               </div>
             ) : (
               <div className="space-y-5">
                 {result.mock && (
                   <div className="rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    {"真實 AI 模式未生效時會顯示此提示。請確認 OpenRouter Key 已設定並重啟服務。"}
+                    真實 AI 模式未生效時會顯示此提示。請確認 OpenRouter Key 已設定並重啟服務。
                   </div>
                 )}
 
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[var(--axon-navy)] px-2.5 py-0.5 text-[11px] text-white">
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[11px] text-white",
+                        isRecord ? "bg-sky-700" : "bg-[var(--axon-navy)]",
+                      )}
+                    >
+                      {isRecord ? "記錄現況" : "發現問題"}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] text-slate-700">
                       {CATEGORY_LABELS[result.category] || result.category}
                     </span>
                     <span className={cn("text-xs font-semibold", SEVERITY_COLORS[result.severity])}>
-                      {SEVERITY_LABELS[result.severity]}{" "}
-                      {"\u98a8\u96aa"}
+                      {SEVERITY_LABELS[result.severity]} 風險
                     </span>
                     <span className="text-xs text-slate-400">
-                      {"\u7f6e\u4fe1\u5ea6 "}
-                      {Math.round((result.confidence || 0) * 100)}%
+                      置信度 {Math.round((result.confidence || 0) * 100)}%
                     </span>
                   </div>
                   <input
@@ -356,11 +443,66 @@ export default function CapturePage() {
                   </p>
                 </div>
 
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    標籤
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => removeTag(t)}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#e8f4fb] px-2.5 py-1 text-xs font-medium text-[#02445f]"
+                        title="移除標籤"
+                      >
+                        #{t}
+                        <X size={11} className="opacity-60" />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      className="axon-input min-h-0 flex-1 py-2 text-sm"
+                      placeholder="新增標籤，按 Enter…"
+                      value={tagDraft}
+                      onChange={(e) => setTagDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTag(tagDraft);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="axon-btn axon-btn-ghost min-h-9 px-3 text-xs"
+                      onClick={() => addTag(tagDraft)}
+                    >
+                      加入
+                    </button>
+                  </div>
+                  {suggestable.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {suggestable.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => addTag(t)}
+                          className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-500 hover:border-[var(--axon-steel)] hover:text-[var(--axon-ink)]"
+                        >
+                          + {t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <Gauge size={13} />
-                      {"\u76ee\u8996\u9032\u5ea6"}
+                      目視進度
                     </div>
                     <div className="mt-2 text-2xl font-semibold text-[var(--axon-ink)]">
                       {result.progressPct ?? 0}%
@@ -372,56 +514,56 @@ export default function CapturePage() {
                   <div className="rounded-2xl bg-slate-50 px-4 py-3">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <Wrench size={13} />
-                      {"\u4e3b\u8981\u5de5\u5e8f"}
+                      主要工序
                     </div>
                     <div className="mt-2 text-sm font-semibold text-[var(--axon-ink)]">
-                      {result.workActivity || "\u2014"}
+                      {result.workActivity || "—"}
                     </div>
                     <div className="axon-muted mt-2 text-xs">{result.location}</div>
                   </div>
                 </div>
 
-                <div>
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {"\u767c\u73fe\u7684\u6f0f\u6d1e\u8207\u554f\u984c"}
-                  </h3>
-                  <div className="space-y-2">
-                    {(result.findings || []).length === 0 && (
-                      <p className="text-sm text-slate-400">
-                        {"\u66ab\u672a\u5217\u51fa\u5177\u9ad4\u767c\u73fe"}
-                      </p>
-                    )}
-                    {(result.findings || []).map((f, i) => (
-                      <div
-                        key={i}
-                        className="flex gap-3 rounded-xl border border-[var(--axon-line)] px-3 py-2.5"
-                      >
+                {(!isRecord || (result.findings || []).length > 0) && (
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {isRecord ? "現況摘要觀察" : "發現的漏洞與問題"}
+                    </h3>
+                    <div className="space-y-2">
+                      {(result.findings || []).length === 0 && (
+                        <p className="text-sm text-slate-400">暫未列出具體發現</p>
+                      )}
+                      {(result.findings || []).map((f, i) => (
                         <div
-                          className={cn(
-                            "mt-0.5 h-2 w-2 shrink-0 rounded-full",
-                            f.severity === "HIGH"
-                              ? "bg-rose-500"
-                              : f.severity === "MEDIUM"
-                                ? "bg-amber-500"
-                                : "bg-emerald-500"
-                          )}
-                        />
-                        <div>
-                          <div className="text-sm font-medium text-[var(--axon-ink)]">
-                            {f.label}
-                          </div>
-                          <div className="axon-muted mt-0.5 text-xs leading-relaxed">
-                            {f.detail}
+                          key={i}
+                          className="flex gap-3 rounded-xl border border-[var(--axon-line)] px-3 py-2.5"
+                        >
+                          <div
+                            className={cn(
+                              "mt-0.5 h-2 w-2 shrink-0 rounded-full",
+                              f.severity === "HIGH"
+                                ? "bg-rose-500"
+                                : f.severity === "MEDIUM"
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500",
+                            )}
+                          />
+                          <div>
+                            <div className="text-sm font-medium text-[var(--axon-ink)]">
+                              {f.label}
+                            </div>
+                            <div className="axon-muted mt-0.5 text-xs leading-relaxed">
+                              {f.detail}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-slate-500">
-                    {"\u5efa\u8b70\u52d5\u4f5c"}
+                    {isRecord ? "備註" : "建議動作"}
                   </label>
                   <textarea
                     className="w-full rounded-xl border border-[var(--axon-line)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--axon-steel)]/20"
@@ -435,7 +577,7 @@ export default function CapturePage() {
 
                 <details className="rounded-xl border border-[var(--axon-line)] bg-slate-50/60 p-3">
                   <summary className="cursor-pointer text-sm font-medium text-slate-600">
-                    {"\u66f4\u591a\u9078\u9805\uff08\u5206\u985e\uff0f\u6307\u6d3e\uff09"}
+                    更多選項（分類／指派）
                   </summary>
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 gap-2">
@@ -464,15 +606,13 @@ export default function CapturePage() {
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-slate-500">
-                          {"\u8ca0\u8cac\u4eba"}
-                        </span>
+                        <span className="text-xs font-medium text-slate-500">負責人</span>
                         <select
                           className="axon-input"
                           value={assigneeId}
                           onChange={(e) => setAssigneeId(e.target.value)}
                         >
-                          <option value="">{"\u9ed8\u8a8d\uff08\u7576\u524d\u767b\u5165\uff09"}</option>
+                          <option value="">預設（當前登入）</option>
                           {people.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name}
@@ -481,15 +621,13 @@ export default function CapturePage() {
                         </select>
                       </label>
                       <label className="block space-y-1">
-                        <span className="text-xs font-medium text-slate-500">
-                          {"\u5206\u5224\u516c\u53f8"}
-                        </span>
+                        <span className="text-xs font-medium text-slate-500">分判公司</span>
                         <select
                           className="axon-input"
                           value={subcontractorId}
                           onChange={(e) => setSubcontractorId(e.target.value)}
                         >
-                          <option value="">{"\u5f85\u6307\u6d3e"}</option>
+                          <option value="">待指派</option>
                           {companies.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}
@@ -502,14 +640,26 @@ export default function CapturePage() {
                   </div>
                 </details>
 
-                <button
-                  disabled={busy}
-                  onClick={createCase}
-                  className="axon-btn axon-btn-ok w-full"
-                >
-                  <CheckCircle2 size={16} />
-                  {"\u78ba\u8a8d\u4e26\u5efa\u7acb\u4e8b\u4ef6"}
-                </button>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {isRecord && (
+                    <button
+                      disabled={busy}
+                      onClick={saveEvidenceOnly}
+                      className="axon-btn axon-btn-ghost w-full"
+                    >
+                      <Archive size={16} />
+                      只存證據
+                    </button>
+                  )}
+                  <button
+                    disabled={busy}
+                    onClick={createCase}
+                    className={cn("axon-btn axon-btn-ok w-full", !isRecord && "sm:col-span-2")}
+                  >
+                    <CheckCircle2 size={16} />
+                    確認並建立事件
+                  </button>
+                </div>
               </div>
             )}
           </div>

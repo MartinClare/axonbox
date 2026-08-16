@@ -8,11 +8,58 @@ import { importEmailMessages } from "@/lib/connectors/email";
 import type { Prisma } from "@prisma/client";
 import exifr from "exifr";
 
+function parseTagsJson(raw: unknown): string {
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const tags = parsed
+          .filter((t): t is string => typeof t === "string")
+          .map((t) => t.replace(/^#/, "").trim())
+          .filter(Boolean);
+        return JSON.stringify([...new Set(tags)].slice(0, 20));
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return "[]";
+}
+
 export async function GET(req: NextRequest) {
   const { error } = await requireSession();
   if (error) return error;
 
   const sp = req.nextUrl.searchParams;
+
+  if (sp.get("suggestTags") === "1") {
+    const rows = await prisma.evidence.findMany({
+      where: { tagsJson: { not: "[]" } },
+      select: { tagsJson: true },
+      orderBy: { capturedAt: "desc" },
+      take: 80,
+    });
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      try {
+        const tags = JSON.parse(row.tagsJson) as unknown;
+        if (!Array.isArray(tags)) continue;
+        for (const t of tags) {
+          if (typeof t !== "string" || !t.trim()) continue;
+          const key = t.replace(/^#/, "").trim();
+          counts.set(key, (counts.get(key) || 0) + 1);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const tags = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([t]) => t)
+      .slice(0, 20);
+    return NextResponse.json({ tags });
+  }
+
   const q = sp.get("q") || undefined;
   const category = sp.get("category") || undefined;
   const status = sp.get("status") || undefined;
@@ -28,6 +75,7 @@ export async function GET(req: NextRequest) {
               { title: { contains: q } },
               { location: { contains: q } },
               { chatText: { contains: q } },
+              { tagsJson: { contains: q } },
             ],
           }
         : {},
@@ -81,22 +129,42 @@ export async function POST(req: NextRequest) {
       | "FOLDER";
     const chatText = String(form.get("chatText") || "");
     const title = String(form.get("title") || "");
+    const tagsJson = parseTagsJson(form.get("tagsJson"));
+    const skipAi = String(form.get("skipAi") || "") === "1";
+    const providedAiJson = String(form.get("aiJson") || "").trim() || undefined;
     const file = form.get("file");
     let filePath: string | undefined;
     let mime: string | undefined;
     let exifJson: string | undefined;
     let type: "PHOTO" | "VOICE" | "CHAT" | "DOC" = chatText ? "CHAT" : "DOC";
-    let aiJson: string | undefined;
+    let aiJson: string | undefined = providedAiJson;
     let category: string | undefined;
     let severity: string | undefined;
     let location: string | undefined;
     let finalTitle = title;
 
+    if (providedAiJson) {
+      try {
+        const ai = JSON.parse(providedAiJson) as {
+          category?: string;
+          severity?: string;
+          location?: string;
+          title?: string;
+        };
+        category = ai.category;
+        severity = ai.severity;
+        location = ai.location;
+        if (!title && ai.title) finalTitle = ai.title;
+      } catch {
+        /* ignore */
+      }
+    }
+
     if (file instanceof File && file.size > 0) {
       const saved = await saveUpload(file, "evidence");
       filePath = saved.filePath;
       mime = saved.mime;
-      if (file.type.startsWith("image/")) {
+      if (file.type.startsWith("image/") || isImageName(file.name)) {
         type = "PHOTO";
         try {
           const exif = await exifr.parse(saved.bytes);
@@ -104,17 +172,22 @@ export async function POST(req: NextRequest) {
         } catch {
           /* ignore */
         }
-        const ai = await extractFromInput({
-          text: chatText || title,
-          imageBase64: saved.bytes.toString("base64"),
-          imageMime: file.type,
-          filename: file.name,
-        });
-        aiJson = JSON.stringify(ai);
-        category = ai.category;
-        severity = ai.severity;
-        location = ai.location;
-        finalTitle = title || ai.title;
+        if (!skipAi && !providedAiJson) {
+          const ai = await extractFromInput({
+            text: chatText || title,
+            imageBase64: saved.bytes.toString("base64"),
+            imageMime: file.type || "image/jpeg",
+            filename: file.name,
+            analysisMode: "discover",
+          });
+          aiJson = JSON.stringify(ai);
+          category = ai.category;
+          severity = ai.severity;
+          location = ai.location;
+          finalTitle = title || ai.title;
+        } else {
+          finalTitle = title || file.name;
+        }
       } else if (file.type.startsWith("audio/")) {
         type = "VOICE";
         finalTitle = title || `語音 ${file.name}`;
@@ -133,12 +206,14 @@ export async function POST(req: NextRequest) {
       } else {
         finalTitle = title || "聊天記錄";
       }
-      const ai = await extractFromInput({ text: chatText });
-      aiJson = JSON.stringify(ai);
-      category = ai.category;
-      severity = ai.severity;
-      location = ai.location;
-      if (!title) finalTitle = ai.title;
+      if (!skipAi && !providedAiJson) {
+        const ai = await extractFromInput({ text: chatText, analysisMode: "discover" });
+        aiJson = JSON.stringify(ai);
+        category = ai.category;
+        severity = ai.severity;
+        location = ai.location;
+        if (!title) finalTitle = ai.title;
+      }
     }
 
     const created = await prisma.evidence.create({
@@ -151,6 +226,7 @@ export async function POST(req: NextRequest) {
         exifJson,
         aiJson,
         chatText: chatText || null,
+        tagsJson,
         source,
         category,
         severity,
@@ -162,4 +238,8 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: "multipart required" }, { status: 400 });
+}
+
+function isImageName(name: string) {
+  return /\.(jpe?g|png|webp|gif|heic|heif)$/i.test(name);
 }

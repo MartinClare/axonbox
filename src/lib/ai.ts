@@ -26,6 +26,8 @@ export type ExtractResult = {
   confidence: number;
   mock: boolean;
   model?: string;
+  tags: string[];
+  analysisMode: "record" | "discover";
 };
 
 export { hasAIKey, hasOpenAIKey, getAIModel };
@@ -38,19 +40,60 @@ const CATEGORIES: CaseCategory[] = [
   "OTHER",
 ];
 
-function mockExtract(text?: string, filename?: string): ExtractResult {
+function normalizeTags(raw: unknown, extras: string[] = []): string[] {
+  const fromAi = Array.isArray(raw)
+    ? raw
+        .filter((t): t is string => typeof t === "string")
+        .map((t) => t.replace(/^#/, "").trim())
+        .filter(Boolean)
+    : [];
+  const out: string[] = [];
+  for (const t of [...extras, ...fromAi]) {
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 12);
+}
+
+function mockExtract(
+  text?: string,
+  filename?: string,
+  analysisMode: "record" | "discover" = "discover",
+): ExtractResult {
   const blob = `${text || ""} ${filename || ""}`.toLowerCase();
   let category: CaseCategory = "OTHER";
   let severity: Severity = "MEDIUM";
-  let title = "現場狀況需跟進";
+  let title = analysisMode === "record" ? "現場現況記錄" : "現場狀況需跟進";
   let location = "地盤區域待確認";
-  let recommendation = "請現場主管核查並安排整改";
+  let recommendation =
+    analysisMode === "record" ? "可作進度／存檔參考，無需強制整改" : "請現場主管核查並安排整改";
   let progressPct = 55;
   let workActivity = "模板／鋼筋作業";
   let findings: SiteFinding[] = [];
-  let siteSummary = "已識別現場照片，建議人工確認關鍵細節";
+  let siteSummary =
+    analysisMode === "record"
+      ? "已記錄現場可見施工狀態（Mock）"
+      : "已識別現場照片，建議人工確認關鍵細節";
+  let tags = ["現場"];
 
-  if (/安全|safety|圍欄|护栏|護欄|helmet|防護|防护|高空|洞口|opening|fence/.test(blob)) {
+  if (analysisMode === "record") {
+    category = "PROGRESS";
+    severity = "LOW";
+    if (/鋼筋|钢筋|rebar/.test(blob)) {
+      title = "現況：鋼筋綁紮作業中";
+      workActivity = "鋼筋";
+      progressPct = 48;
+      tags = ["記錄", "鋼筋", "進度"];
+    } else if (/混凝土|concrete|澆築|浇筑/.test(blob)) {
+      title = "現況：混凝土澆築／養護";
+      workActivity = "混凝土";
+      progressPct = 60;
+      tags = ["記錄", "混凝土", "進度"];
+    } else {
+      tags = ["記錄", "進度", "現場"];
+      findings = [];
+    }
+    siteSummary = "目視記錄現場工序與進度，非缺陷通報";
+  } else if (/安全|safety|圍欄|护栏|護欄|helmet|防護|防护|高空|洞口|opening|fence/.test(blob)) {
     category = "SAFETY";
     severity = "HIGH";
     title = "安全漏洞：邊緣防護不足";
@@ -58,6 +101,7 @@ function mockExtract(text?: string, filename?: string): ExtractResult {
     location = "B區 - 5樓平台";
     progressPct = 62;
     workActivity = "模板作業";
+    tags = ["發現", "安全", "圍欄", "B區"];
     findings = [
       {
         type: "SAFETY_GAP",
@@ -81,6 +125,7 @@ function mockExtract(text?: string, filename?: string): ExtractResult {
     location = "A區 - 3樓";
     progressPct = 48;
     workActivity = "鋼筋／混凝土";
+    tags = ["發現", "質量", "鋼筋"];
     findings = [
       {
         type: "QUALITY_DEFECT",
@@ -98,6 +143,7 @@ function mockExtract(text?: string, filename?: string): ExtractResult {
     location = "主樓施工區";
     progressPct = 68;
     workActivity = "結構／外牆";
+    tags = ["發現", "進度"];
     findings = [
       {
         type: "PROGRESS",
@@ -111,6 +157,7 @@ function mockExtract(text?: string, filename?: string): ExtractResult {
     category = "SAFETY";
     severity = "MEDIUM";
     title = "現場照片已分析";
+    tags = ["發現", "現場"];
     findings = [
       {
         type: "PROGRESS",
@@ -138,11 +185,14 @@ function mockExtract(text?: string, filename?: string): ExtractResult {
     siteSummary,
     confidence: 0.55,
     mock: true,
+    tags: normalizeTags(tags),
+    analysisMode,
   };
 }
 
 function parseJsonLoose(raw: string): Partial<ExtractResult> & {
   findings?: SiteFinding[];
+  tags?: string[];
 } {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return {};
@@ -154,19 +204,24 @@ function parseJsonLoose(raw: string): Partial<ExtractResult> & {
 }
 
 function normalizeExtract(
-  parsed: Partial<ExtractResult> & { findings?: SiteFinding[] },
+  parsed: Partial<ExtractResult> & { findings?: SiteFinding[]; tags?: string[] },
   input: { text?: string },
   model: string,
+  analysisMode: "record" | "discover",
 ): ExtractResult {
   const category = CATEGORIES.includes(parsed.category as CaseCategory)
     ? (parsed.category as CaseCategory)
-    : "OTHER";
+    : analysisMode === "record"
+      ? "PROGRESS"
+      : "OTHER";
   const severity =
     parsed.severity === "HIGH" ||
     parsed.severity === "MEDIUM" ||
     parsed.severity === "LOW"
       ? parsed.severity
-      : "MEDIUM";
+      : analysisMode === "record"
+        ? "LOW"
+        : "MEDIUM";
 
   const findings = Array.isArray(parsed.findings)
     ? parsed.findings.map((f) => ({
@@ -180,21 +235,27 @@ function normalizeExtract(
       }))
     : [];
 
+  const modeTag = analysisMode === "record" ? "記錄" : "發現";
+
   return {
-    title: parsed.title || "現場分析",
+    title: parsed.title || (analysisMode === "record" ? "現場現況記錄" : "現場分析"),
     description: parsed.description || input.text || "AI 已完成場地分析",
     category,
     severity,
     location: parsed.location || "地盤區域待確認",
-    recommendation: parsed.recommendation || "請安排跟進",
+    recommendation:
+      parsed.recommendation ||
+      (analysisMode === "record" ? "可作存檔／進度參考" : "請安排跟進"),
     suggestedAssigneeRole: parsed.suggestedAssigneeRole || "SUPERVISOR",
     progressPct: Math.min(100, Math.max(0, Number(parsed.progressPct) || 50)),
     workActivity: parsed.workActivity || "現場作業",
-    findings,
+    findings: analysisMode === "record" ? findings.slice(0, 3) : findings,
     siteSummary: parsed.siteSummary || parsed.description || "",
     confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0.7)),
     mock: false,
     model,
+    tags: normalizeTags(parsed.tags, [modeTag]),
+    analysisMode,
   };
 }
 
@@ -204,10 +265,13 @@ export async function extractFromInput(input: {
   imageMime?: string;
   filename?: string;
   mode?: "site" | "email";
+  analysisMode?: "record" | "discover";
   documentNote?: string;
 }): Promise<ExtractResult> {
+  const analysisMode = input.analysisMode === "record" ? "record" : "discover";
+
   if (!hasAIKey()) {
-    return mockExtract(input.text, input.filename);
+    return mockExtract(input.text, input.filename, analysisMode);
   }
 
   const model = getAIModel();
@@ -223,13 +287,27 @@ export async function extractFromInput(input: {
   const docNote = input.documentNote
     ? `\n附件摘錄（僅供判斷主題，勿寫進個案正文）：\n${input.documentNote}\n`
     : "";
+
+  const recordRules = `
+模式：記錄現況（Record）。只描述照片／文字中「看得見的現況」，不要虛構安全或質量缺陷。
+- findings 可為空陣列，或只列客觀觀察（非必改缺陷）
+- severity 通常 LOW 或 MEDIUM
+- recommendation 為可選備註／存檔建議，不要寫「立即整改」
+- category 偏向 PROGRESS 或 OTHER（除非文字明確是其他類）
+`;
+  const discoverRules = `
+模式：發現問題（Discover）。找出安全漏洞、質量缺陷、進度風險，並提出可執行整改建議。
+重點檢查：圍欄／防護、洞口未封、高空／PPE、鋼筋外露、裂縫、材料堆放、通道阻礙、明顯進度延誤、臨時交通／圍板跡象。
+並在 recommendation 中提示是否可能涉及公共道路挖掘／XP／AN（若無關則勿硬套）。
+`;
+
   try {
     const client = getAIClient();
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       {
         type: "text",
         text: `你是 AxonBox 資深工地巡檢／香港工程顧問 AI（熟悉 HyD XPMS／道路挖掘許可常識）。
-${emailRules}請分析現場照片／文字，找出安全漏洞、質量缺陷、進度線索，並在 recommendation 中提示是否可能涉及公共道路挖掘／XP／AN（Advance Notification）等合規動作（若無關則勿硬套）。
+${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
 只回傳純 JSON，文字必須使用繁體中文：
 {
   "title":"一句話標題",
@@ -237,15 +315,16 @@ ${emailRules}請分析現場照片／文字，找出安全漏洞、質量缺陷�
   "category":"SAFETY|QUALITY|PROGRESS|ENVIRONMENT|OTHER",
   "severity":"HIGH|MEDIUM|LOW",
   "location":"推測位置",
-  "recommendation":"具體下一步（可含合規提示）",
+  "recommendation":"具體下一步或備註",
   "suggestedAssigneeRole":"SUPERVISOR|SUBCONTRACTOR",
   "progressPct":0到100的整數,
   "workActivity":"主要工序",
   "siteSummary":"一句話場地判斷",
   "confidence":0到1,
+  "tags":["短標籤1","短標籤2"],
   "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}]
 }
-重點檢查：圍欄／防護、洞口未封、高空／PPE、鋼筋外露、裂縫、材料堆放、通道阻礙、明顯進度階段、臨時交通／圍板跡象。
+tags：3～8 個短繁中標籤（區域、工序、物件、風險類型），不要加 #。
 文字補充：${input.text || "(無)"}${docNote}`,
       },
     ];
@@ -261,17 +340,17 @@ ${emailRules}請分析現場照片／文字，找出安全漏洞、質量缺陷�
     const res = await client.chat.completions.create({
       model,
       messages: [{ role: "user", content }],
-      temperature: 0.2,
+      temperature: analysisMode === "record" ? 0.15 : 0.2,
     });
     const raw = res.choices[0]?.message?.content || "";
     const parsed = parseJsonLoose(raw);
     if (!parsed.title && !parsed.description && !parsed.findings?.length) {
       throw new Error(`Empty AI response: ${raw.slice(0, 200)}`);
     }
-    return normalizeExtract(parsed, input, model);
+    return normalizeExtract(parsed, input, model, analysisMode);
   } catch (err) {
     console.error("AI extract failed, fallback mock", err);
-    return mockExtract(input.text, input.filename);
+    return mockExtract(input.text, input.filename, analysisMode);
   }
 }
 

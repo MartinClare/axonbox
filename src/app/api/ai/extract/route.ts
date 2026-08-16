@@ -11,6 +11,10 @@ export async function POST(req: NextRequest) {
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
     const text = String(form.get("text") || "");
+    const analysisMode =
+      String(form.get("analysisMode") || form.get("mode") || "discover") === "record"
+        ? "record"
+        : "discover";
     const file = form.get("file");
     let imageBase64: string | undefined;
     let imageMime: string | undefined;
@@ -46,16 +50,21 @@ export async function POST(req: NextRequest) {
       imageBase64,
       imageMime,
       filename,
+      analysisMode,
     });
     return NextResponse.json(result);
   }
 
   const body = await req.json();
+  const analysisMode = body.analysisMode === "record" ? "record" : "discover";
   const result = await extractFromInput({
     text: body.text,
     imageBase64: body.imageBase64,
     imageMime: body.imageMime,
     filename: body.filename,
+    mode: body.mode,
+    analysisMode,
+    documentNote: body.documentNote,
   });
   return NextResponse.json(result);
 }

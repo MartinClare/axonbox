@@ -29,6 +29,7 @@ type EvidenceItem = {
   capturedAt: string;
   aiJson: string | null;
   exifJson: string | null;
+  tagsJson?: string | null;
   case?: {
     id: string;
     caseNo: string;
@@ -107,6 +108,12 @@ export default function EvidencePage() {
     DateTimeOriginal?: string;
   } | null>(selected?.exifJson, null);
   const pages = Math.max(1, Math.ceil(total / 16));
+
+  function evidenceTags(item: EvidenceItem) {
+    const raw = safeJsonParse<unknown>(item.tagsJson, []);
+    if (!Array.isArray(raw)) return [] as string[];
+    return raw.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+  }
 
   return (
     <div className="space-y-4">
@@ -228,6 +235,18 @@ export default function EvidencePage() {
                   </span>
                 )}
                 <div className="mt-1 line-clamp-2 text-sm font-medium">{item.title}</div>
+                {evidenceTags(item).length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {evidenceTags(item).slice(0, 4).map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-800"
+                      >
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="text-xs text-slate-400">{item.location || "—"}</div>
                 <div className="text-xs text-slate-400">{formatDate(item.capturedAt)}</div>
               </button>
@@ -278,6 +297,18 @@ export default function EvidencePage() {
                 <span className={cn("mt-1 inline-block rounded-full px-2 py-0.5 text-[10px]", STATUS_COLORS[selected.status])}>
                   {EVIDENCE_STATUS_LABELS[selected.status]}
                 </span>
+                {evidenceTags(selected).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {evidenceTags(selected).map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-800"
+                      >
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <dl className="space-y-1 text-xs text-slate-600">
                 <div>時間：{formatDate(selected.capturedAt)}</div>

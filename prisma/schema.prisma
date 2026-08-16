@@ -158,6 +158,7 @@ model Evidence {
   exifJson   String?
   aiJson     String?
   chatText   String?
+  tagsJson   String    @default("[]")
   status     String    @default("PENDING")
   source     String    @default("UPLOAD")
   category   String?
