@@ -887,6 +887,12 @@ export default function CaseDetailPage() {
                     {t("case.markAfter")}
                   </button>
                 )}
+                <Link
+                  href={`/evidence?id=${e.id}`}
+                  className="mt-2 block text-xs text-slate-500 hover:text-[var(--axon-blue)] hover:underline"
+                >
+                  {t("case.openInEvidence")}
+                </Link>
               </div>
             );
           })}

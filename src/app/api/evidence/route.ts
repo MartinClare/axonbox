@@ -64,8 +64,14 @@ export async function GET(req: NextRequest) {
   const category = sp.get("category") || undefined;
   const status = sp.get("status") || undefined;
   const source = sp.get("source") || undefined;
+  const linked = sp.get("linked");
+  const sortRaw = sp.get("sort") || "capturedAt";
+  const sortField = sortRaw === "createdAt" ? "createdAt" : "capturedAt";
+  const orderRaw = (sp.get("order") || "desc").toLowerCase();
+  const orderDir = orderRaw === "asc" ? "asc" : "desc";
   const page = Math.max(1, Number(sp.get("page") || 1));
-  const pageSize = Math.min(48, Number(sp.get("pageSize") || 16));
+  const pageSize = Math.min(96, Number(sp.get("pageSize") || 36));
+  const withEvents = sp.get("events") === "1";
 
   const where: Prisma.EvidenceWhereInput = {
     AND: [
@@ -82,6 +88,7 @@ export async function GET(req: NextRequest) {
       category ? { category } : {},
       status ? { status } : {},
       source ? { source } : {},
+      linked === "1" ? { caseId: { not: null } } : linked === "0" ? { caseId: null } : {},
     ],
   };
 
@@ -89,15 +96,19 @@ export async function GET(req: NextRequest) {
     prisma.evidence.count({ where }),
     prisma.evidence.findMany({
       where,
-      orderBy: { capturedAt: "desc" },
+      orderBy: { [sortField]: orderDir },
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
-        case: {
-          include: {
-            events: { include: { actor: true }, orderBy: { createdAt: "asc" } },
-          },
-        },
+        case: withEvents
+          ? {
+              include: {
+                events: { include: { actor: true }, orderBy: { createdAt: "asc" } },
+              },
+            }
+          : {
+              select: { id: true, caseNo: true, status: true, title: true },
+            },
       },
     }),
   ]);

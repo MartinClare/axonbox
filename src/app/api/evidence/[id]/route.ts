@@ -5,6 +5,25 @@ import { ensureAfterTag, parseEvidenceTags } from "@/lib/case-closeout";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+export async function GET(_req: NextRequest, ctx: Ctx) {
+  const { error } = await requireSession();
+  if (error) return error;
+  const { id } = await ctx.params;
+
+  const item = await prisma.evidence.findUnique({
+    where: { id },
+    include: {
+      case: {
+        include: {
+          events: { include: { actor: true }, orderBy: { createdAt: "asc" } },
+        },
+      },
+    },
+  });
+  if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(item);
+}
+
 export async function PATCH(req: NextRequest, ctx: Ctx) {
   const { error } = await requireSession();
   if (error) return error;
@@ -48,6 +67,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
-  const updated = await prisma.evidence.update({ where: { id }, data });
+  const updated = await prisma.evidence.update({
+    where: { id },
+    data,
+    include: {
+      case: {
+        select: { id: true, caseNo: true, status: true, title: true },
+      },
+    },
+  });
   return NextResponse.json(updated);
 }

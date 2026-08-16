@@ -433,26 +433,30 @@ Run a **Checklist** when you are inspecting against a template. **Pass** logs a 
 
 ## 11. Evidence
 
-**Evidence** is the photo library behind Cases. Use it when you need to find a photo later, attach context, or show what was on file — not to run the day’s chase. Capture and Inbox already put files here when you save them.
+**Evidence** is the photo gallery behind Cases — browse, filter, and zoom like a photo library. Each thumb can show evidence status and a linked Case (with Case status). One Case can hold many photos: open a photo, **Link to Case**, and repeat for more shots of the same issue. Use this when you need to find or attach photos later — Capture and Inbox already put files here when you save them.
 
 ### 11.1 Bring photos in
 
 1. Sidebar → **Evidence**.
-2. Use **Import / upload**, or choose WhatsApp / email import and paste if you are not using Inbox.
-3. EXIF (time, location, device) is read when the file has it.
+2. Open **Import / upload** at the top if you need to add files or paste WhatsApp / email text.
+3. Use **Import / upload**, or choose WhatsApp / email import and paste if you are not using Inbox.
+4. EXIF (time, location, device) is read when the file has it.
 
 ![Fig 11.1 Evidence](/help-media/fig-11-1-evidence.png)
 
-### 11.2 Filter and browse
+### 11.2 Filter, sort, and browse
 
-1. Keyword, category, status → **Filter**.
-2. Click a thumbnail.
+1. Use the toolbar: keyword, category, evidence status, **source**, **Case link** (all / linked / unlinked), and **sort** (captured or added, newest or oldest).
+2. Click **Filter**.
+3. Browse the dense photo grid. Badges on each thumb show evidence status and, if linked, the Case number and Case status.
 
-### 11.3 Detail, AI, process log
+### 11.3 Zoom and Case link
 
-1. Right-hand **Evidence detail** shows time, location, source.
-2. **AI analysis** shows category, severity, recommendation (content is not translated).
-3. **Activity log** is the Case process if linked.
+1. Click a thumbnail to open the fullscreen viewer.
+2. Zoom with the buttons, mouse wheel, or double-click; drag when zoomed. Use arrow keys or on-screen arrows for prev / next. Esc closes.
+3. In the side panel, check metadata, AI, and the Case strip.
+4. **Link to Case** — search by case number or title and pick a Case. **Unlink** removes the connection. Link several photos to the same Case when one issue has many shots.
+5. Open the Case from the Case number link, or from a Case’s **Files** tab use **Open in Evidence**.
 
 ![Fig 11.3 Evidence detail](/help-media/fig-11-3-detail.png)
 

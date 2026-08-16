@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
   const category = searchParams.get("category") || undefined;
   const status = searchParams.get("status") || undefined;
   const severity = searchParams.get("severity") || undefined;
+  const brief = searchParams.get("brief") === "1";
 
   const where: Prisma.CaseWhereInput = {
     AND: [
@@ -31,6 +32,22 @@ export async function GET(req: NextRequest) {
       severity ? { severity } : {},
     ],
   };
+
+  if (brief) {
+    const cases = await prisma.case.findMany({
+      where,
+      orderBy: { discoveredAt: "desc" },
+      take: 80,
+      select: {
+        id: true,
+        caseNo: true,
+        title: true,
+        status: true,
+        category: true,
+      },
+    });
+    return NextResponse.json(cases);
+  }
 
   const cases = await prisma.case.findMany({
     where,
