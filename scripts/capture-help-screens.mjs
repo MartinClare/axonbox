@@ -68,6 +68,10 @@ const context = await browser.newContext({
 await context.addCookies([{ name: "axonbox-ui-locale", value: "en", url: BASE }]);
 await context.addInitScript(() => {
   localStorage.setItem("axonbox:uiLocale", "en");
+  localStorage.setItem("axon-theme", "light");
+  document.documentElement.classList.remove("dark");
+  document.documentElement.style.colorScheme = "light";
+  document.documentElement.dataset.theme = "light";
 });
 
 const page = await context.newPage();
@@ -105,6 +109,7 @@ await ready(page, "/install", "text=Install");
 await shot(page, "fig-03-5-install");
 
 await ready(page, "/settings", "text=Interface language");
+await page.getByText(/appearance/i).first().waitFor({ timeout: 15000 }).catch(() => {});
 await shot(page, "fig-16-2-language");
 const project = page.getByText(/project name|site code|project/i).first();
 if (await project.count()) await project.scrollIntoViewIfNeeded();
@@ -217,14 +222,27 @@ const template = page.locator("button, a").filter({ hasText: /.+/ }).nth(0);
 await shot(page, "fig-10-1-checklist");
 
 await ready(page, "/evidence", "text=Evidence");
-await page.waitForTimeout(800);
+await page.waitForTimeout(1000);
 await shot(page, "fig-11-1-evidence");
-const card = page.locator("button, article, a").filter({ hasText: /handled|pending|safety|quality/i }).first();
-if (await card.count()) {
-  await card.click().catch(() => {});
-  await page.waitForTimeout(500);
+
+// Open fullscreen lightbox so the action bar (Create/Open Case, Replace, Delete) is visible
+const thumb = page.locator("main button.group, main button.aspect-square").first();
+if (await thumb.count()) {
+  await thumb.click();
+} else {
+  const anyThumb = page.locator("main img").first();
+  if (await anyThumb.count()) await anyThumb.click();
 }
+await page
+  .getByRole("dialog")
+  .or(page.getByText(/create case|open case|replace photo|link to case/i).first())
+  .waitFor({ timeout: 15000 })
+  .catch(() => {});
+await page.waitForTimeout(800);
 await shot(page, "fig-11-3-detail");
+// Close lightbox if open so later navigations are clean
+await page.keyboard.press("Escape").catch(() => {});
+await page.waitForTimeout(300);
 
 await ready(page, "/daily-reports", "text=Daily");
 await page.waitForTimeout(500);
