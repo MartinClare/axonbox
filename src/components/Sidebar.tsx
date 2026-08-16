@@ -21,6 +21,7 @@ import {
   Wifi,
   CheckSquare,
   BookOpen,
+  CircleHelp,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/labels";
@@ -95,6 +96,7 @@ export function Sidebar() {
         items: [
           { href: "/directory", labelKey: "nav.directory", icon: Users },
           { href: "/settings", labelKey: "nav.settings", icon: Settings },
+          { href: "/help", labelKey: "nav.help", icon: CircleHelp },
           { href: "/install", labelKey: "nav.install", icon: Download },
           { href: "/open", labelKey: "nav.open", icon: Wifi },
         ] as NavItem[],
