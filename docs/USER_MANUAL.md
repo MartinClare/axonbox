@@ -8,21 +8,31 @@ This guide matches the **live app**. The AXONCASE pitch explains *why*; the step
 
 ## 1. Why AxonBox exists
 
+Figures in this chapter are from the AXONCASE pitch. They explain the idea. From chapter 3 onward, screenshots are the **live web app**.
+
 ### 1.1 Too much information, too little time
 
 Site teams already capture plenty: WhatsApp, photos, voice notes, Excel, paper forms. The problem is not “more recording.” It is that information is scattered, so follow-up and reporting take the evening.
+
+![Too much information, too little time](/help-media/ppt-02-too-much-info.jpg)
 
 ### 1.2 Scattered site admin today
 
 Typical day: issues live in a group chat, photos stay in the camera roll, verbal instructions leave no file, spreadsheets fork into versions, paper is hard to search, and someone rebuilds a daily report at night.
 
+The pitch names six sources of chaos: WhatsApp floods, photos in albums, voice with no record, Excel versions, paper forms, and late-night report packing.
+
 ### 1.3 Time, missed instructions, weak evidence, delayed decisions
 
 That pattern wastes hours, buries instructions, leaves photos that cannot be used as evidence, and delays decisions that cost money.
 
+![Four costs of the old way](/help-media/ppt-03-four-costs.jpg)
+
 ### 1.4 From chaos to structured control
 
 AxonBox is meant to turn a site photo or message into a **Case** with an owner, a due date, after-proof, and a close-out file — then roll the day up for the PM/owner.
+
+![From WhatsApp chaos to structured project control](/help-media/ppt-04-from-chaos.jpg)
 
 ### 1.5 What this product is not
 
@@ -34,15 +44,27 @@ It is **not** a DWSS / RISC / ITP compliance system. It is a private-site superv
 
 ### 2.1 Record the site so it can become a Case
 
-Use **Site capture** (photo) or **Inbox** (email / WhatsApp / paste). AI proposes category, severity, and location. You save evidence and/or create a Case.
+The pitch: one site photo starts construction admin. In the app, use **Site capture** (photo) or **Inbox** (email / WhatsApp / paste). AI proposes category, severity, and location. You save evidence and/or create a Case.
+
+![AI camera interface — one photo starts the admin chain](/help-media/ppt-01-ai-camera.jpg)
+
+![A digital assistant, not more paperwork](/help-media/ppt-05-digital-assistant.jpg)
 
 ### 2.2 Assign, prove after, close with a pack
 
 On **Cases**, the loop is **Open → Assign → After proof → Close**. You cannot close without an after photo (or a written waive). Then download a close-out pack PDF.
 
+The pitch shows the same journey as seven steps: chat/photo/voice → AI extract → Case → assign → due date → verify close → keep evidence.
+
+![Case journey: extract, assign, verify, keep evidence](/help-media/ppt-06-case-journey.jpg)
+
 ### 2.3 Dashboard, daily rollup, and reports for PM / owner
 
 **Overview** is the dashboard. **Daily reports** is the day’s rollup (copy to WhatsApp, Word/PDF). **Reports** generates period packs.
+
+![One day of site activity → one daily report](/help-media/ppt-07-daily-report.jpg)
+
+![Every photo can become commercial evidence](/help-media/ppt-08-evidence.jpg)
 
 ### 2.4 Who uses which area
 
@@ -72,7 +94,7 @@ On **Cases**, the loop is **Open → Assign → After proof → Close**. You can
 ### 3.1 Open the URL
 
 1. On a computer, open **Chrome** or **Edge**.
-2. Go to your AxonBox URL (for local demo: `http://127.0.0.1:3000`).
+2. Go to **https://axonbox-production.up.railway.app**.
 3. If you land on login, you are in the right place.
 
 ![Fig 3.1 Login](/help-media/fig-03-1-login.png)
