@@ -43,6 +43,7 @@ model Project {
   dailyReports   DailyReport[]
   subcontractors Subcontractor[]
   inboxMessages  InboxMessage[]
+  meetings       Meeting[]
 }
 
 model Subcontractor {
@@ -93,13 +94,31 @@ model Case {
   inboxMessages InboxMessage[]
 }
 
+model Meeting {
+  id         String    @id @default(cuid())
+  title      String
+  meetingAt  DateTime?
+  sourceName String?
+  rawText    String?
+  projectId  String
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  tasks   Task[]
+
+  @@index([projectId, sortOrder])
+}
+
 model Task {
   id            String    @id @default(cuid())
   title         String
   instructions  String?
   status        String    @default("PENDING")
   dueAt         DateTime?
-  caseId        String
+  caseId        String?
+  meetingId     String?
   assigneeId    String?
   sortOrder     Int       @default(0)
   labelsJson    String    @default("[]")
@@ -109,10 +128,12 @@ model Task {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  case     Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  assignee User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  case     Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  meeting  Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  assignee User?    @relation("TaskAssignee", fields: [assigneeId], references: [id])
 
   @@index([status, sortOrder])
+  @@index([meetingId, sortOrder])
 }
 
 model CaseEvent {

@@ -44,10 +44,13 @@ export default async function OverviewPage() {
       prisma.case.count({
         where: { status: { not: "CLOSED" }, createdAt: { lt: weekAgo } },
       }),
-      prisma.task.count({ where: { status: { in: ["PENDING", "IN_PROGRESS"] } } }),
+      prisma.task.count({
+        where: { status: { in: ["PENDING", "IN_PROGRESS"] }, meetingId: null },
+      }),
       prisma.task.count({
         where: {
           status: { in: ["PENDING", "IN_PROGRESS"] },
+          meetingId: null,
           createdAt: { lt: weekAgo },
         },
       }),

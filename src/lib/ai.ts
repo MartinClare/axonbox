@@ -275,6 +275,131 @@ ${emailRules}請分析現場照片／文字，找出安全漏洞、質量缺陷�
   }
 }
 
+export type MeetingActionItem = {
+  title: string;
+  assigneeName: string | null;
+  dueAt: string | null;
+  notes: string | null;
+};
+
+export type MeetingExtractResult = {
+  title: string;
+  meetingAt: string | null;
+  actions: MeetingActionItem[];
+  mock: boolean;
+  model?: string;
+};
+
+function mockMeetingExtract(text: string): MeetingExtractResult {
+  const lines = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 4);
+  const actionLines = lines.filter((l) =>
+    /行動|跟進|負責|deadline|action|due|須|應|完成|安排/i.test(l),
+  );
+  const pick = (actionLines.length > 0 ? actionLines : lines).slice(0, 8);
+  return {
+    title: "會議行動項目",
+    meetingAt: null,
+    actions: pick.map((line) => ({
+      title: line.slice(0, 120),
+      assigneeName: null,
+      dueAt: null,
+      notes: null,
+    })),
+    mock: true,
+  };
+}
+
+function normalizeMeetingDate(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+export async function extractMeetingActions(text: string): Promise<MeetingExtractResult> {
+  const body = text.trim();
+  if (!body) {
+    return { title: "會議行動項目", meetingAt: null, actions: [], mock: true };
+  }
+  if (!hasAIKey()) return mockMeetingExtract(body);
+
+  const model = getAIModel();
+  try {
+    const client = getAIClient();
+    const res = await client.chat.completions.create({
+      model,
+      temperature: 0.1,
+      messages: [
+        {
+          role: "system",
+          content:
+            "你是香港工程項目會議紀錄助理。只回傳純 JSON，繁體中文。只抽出明確的行動項目（誰做什麼、何時），不要把討論紀錄整段變成任務。",
+        },
+        {
+          role: "user",
+          content: `請從以下會議紀錄抽出行動項目。只回傳 JSON：
+{
+  "title": "會議短標題",
+  "meetingAt": "YYYY-MM-DD 或 null",
+  "actions": [
+    {
+      "title": "要做的事（簡潔）",
+      "assigneeName": "負責人姓名或 null",
+      "dueAt": "YYYY-MM-DD 或 null",
+      "notes": "補充說明或 null"
+    }
+  ]
+}
+規則：
+- 只抽有跟進責任的事項；略過純資訊／已完成事項
+- assigneeName 用紀錄裡出現的人名；沒有就 null
+- dueAt 僅在有明確日期時填寫
+- 最多 30 項
+
+會議紀錄：
+${body.slice(0, 18000)}`,
+        },
+      ],
+    });
+    const raw = res.choices[0]?.message?.content || "";
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("no json");
+    const parsed = JSON.parse(match[0]) as {
+      title?: string;
+      meetingAt?: string | null;
+      actions?: Array<{
+        title?: string;
+        assigneeName?: string | null;
+        dueAt?: string | null;
+        notes?: string | null;
+      }>;
+    };
+    const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
+      .map((a) => ({
+        title: String(a.title || "").trim(),
+        assigneeName: a.assigneeName ? String(a.assigneeName).trim() : null,
+        dueAt: normalizeMeetingDate(a.dueAt),
+        notes: a.notes ? String(a.notes).trim() : null,
+      }))
+      .filter((a) => a.title.length > 0)
+      .slice(0, 30);
+
+    return {
+      title: String(parsed.title || "會議行動項目").trim() || "會議行動項目",
+      meetingAt: normalizeMeetingDate(parsed.meetingAt),
+      actions,
+      mock: false,
+      model,
+    };
+  } catch (err) {
+    console.error("extractMeetingActions failed", err);
+    return mockMeetingExtract(body);
+  }
+}
+
 export type ChatTextOptions = {
   temperature?: number;
   maxTokens?: number;

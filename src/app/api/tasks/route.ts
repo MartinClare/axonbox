@@ -5,14 +5,16 @@ import { Prisma } from "@prisma/client";
 
 const taskInclude = {
   case: { select: { id: true, caseNo: true, title: true, status: true } },
+  meeting: { select: { id: true, title: true, meetingAt: true } },
   assignee: { select: { id: true, name: true, email: true } },
 } as const;
 
 async function syncCaseFromStatus(
-  caseId: string,
+  caseId: string | null | undefined,
   status: string,
   actorId: string | null,
 ) {
+  if (!caseId) return;
   if (status === "IN_PROGRESS") {
     await prisma.case.update({
       where: { id: caseId },
@@ -60,9 +62,15 @@ export async function GET(req: NextRequest) {
   if (error) return error;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const archived = req.nextUrl.searchParams.get("archived") === "1";
+  const scope = req.nextUrl.searchParams.get("scope"); // case | meeting | all
   const where: Prisma.TaskWhereInput = {
     ...(status ? { status } : {}),
     archived,
+    ...(scope === "case"
+      ? { meetingId: null }
+      : scope === "meeting"
+        ? { meetingId: { not: null } }
+        : {}),
   };
   const tasks = await prisma.task.findMany({
     where,
@@ -79,16 +87,31 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const title = String(body.title || "").trim();
-    const caseId = String(body.caseId || "").trim();
+    const caseId = body.caseId ? String(body.caseId).trim() : "";
+    const meetingId = body.meetingId ? String(body.meetingId).trim() : "";
     if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
-    if (!caseId) return NextResponse.json({ error: "caseId required" }, { status: 400 });
+    if (!caseId && !meetingId) {
+      return NextResponse.json({ error: "caseId or meetingId required" }, { status: 400 });
+    }
+    if (caseId && meetingId) {
+      return NextResponse.json({ error: "task cannot belong to both" }, { status: 400 });
+    }
 
-    const linked = await prisma.case.findUnique({ where: { id: caseId } });
-    if (!linked) return NextResponse.json({ error: "case not found" }, { status: 404 });
+    if (caseId) {
+      const linked = await prisma.case.findUnique({ where: { id: caseId } });
+      if (!linked) return NextResponse.json({ error: "case not found" }, { status: 404 });
+    }
+    if (meetingId) {
+      const linked = await prisma.meeting.findUnique({ where: { id: meetingId } });
+      if (!linked) return NextResponse.json({ error: "meeting not found" }, { status: 404 });
+    }
 
     const status = String(body.status || "PENDING");
+    const orderWhere = meetingId
+      ? { meetingId, archived: false }
+      : { status, caseId: { not: null }, archived: false };
     const maxOrder = await prisma.task.aggregate({
-      where: { status, archived: false },
+      where: orderWhere,
       _max: { sortOrder: true },
     });
 
@@ -97,9 +120,14 @@ export async function POST(req: NextRequest) {
         title,
         instructions: body.instructions ? String(body.instructions) : null,
         status,
-        caseId,
+        caseId: caseId || null,
+        meetingId: meetingId || null,
         assigneeId: body.assigneeId || null,
-        dueAt: body.dueAt ? new Date(String(body.dueAt).length === 10 ? `${body.dueAt}T12:00:00` : body.dueAt) : null,
+        dueAt: body.dueAt
+          ? new Date(
+              String(body.dueAt).length === 10 ? `${body.dueAt}T12:00:00` : body.dueAt,
+            )
+          : null,
         sortOrder: (maxOrder._max.sortOrder ?? -1) + 1,
         labelsJson: typeof body.labelsJson === "string" ? body.labelsJson : "[]",
         coverColor: body.coverColor || null,
@@ -130,27 +158,35 @@ export async function PATCH(req: NextRequest) {
           typeof row?.id === "string" &&
           typeof row?.status === "string" &&
           typeof row?.sortOrder === "number",
-      ) as Array<{ id: string; status: string; sortOrder: number }>;
+      ) as Array<{ id: string; status: string; sortOrder: number; meetingId?: string | null }>;
       if (rows.length === 0) {
         return NextResponse.json({ error: "reorder required" }, { status: 400 });
       }
       const actorId = await resolveActorId(session!.user.id);
       const existing = await prisma.task.findMany({
         where: { id: { in: rows.map((r) => r.id) } },
-        select: { id: true, status: true, caseId: true },
+        select: { id: true, status: true, caseId: true, meetingId: true },
       });
       const prev = new Map(existing.map((t) => [t.id, t]));
       await prisma.$transaction(
-        rows.map((row) =>
-          prisma.task.update({
+        rows.map((row) => {
+          const before = prev.get(row.id);
+          // Minutes tasks stay in their meeting list — only reorder, keep status/meeting
+          if (before?.meetingId) {
+            return prisma.task.update({
+              where: { id: row.id },
+              data: { sortOrder: row.sortOrder },
+            });
+          }
+          return prisma.task.update({
             where: { id: row.id },
             data: { status: row.status, sortOrder: row.sortOrder },
-          }),
-        ),
+          });
+        }),
       );
       for (const row of rows) {
         const before = prev.get(row.id);
-        if (before && before.status !== row.status) {
+        if (before && !before.meetingId && before.caseId && before.status !== row.status) {
           await syncCaseFromStatus(before.caseId, row.status, actorId);
         }
       }
@@ -197,7 +233,12 @@ export async function PATCH(req: NextRequest) {
       include: taskInclude,
     });
 
-    if (body.status && body.status !== existing.status) {
+    if (
+      body.status &&
+      body.status !== existing.status &&
+      existing.caseId &&
+      !existing.meetingId
+    ) {
       const actorId = await resolveActorId(session!.user.id);
       await syncCaseFromStatus(updated.caseId, String(body.status), actorId);
     }

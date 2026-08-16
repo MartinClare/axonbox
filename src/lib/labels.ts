@@ -2,7 +2,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   WHATSAPP: "WhatsApp",
   EMAIL: "\u90f5\u4ef6",
   WECHAT: "\u5fae\u4fe1",
-  MANUAL: "\u624b\u52d8\u9304\u5165",
+  MANUAL: "\u624b\u52d8\u8f38\u5165",
 };
 
 export const INBOX_STATUS_LABELS: Record<string, string> = {

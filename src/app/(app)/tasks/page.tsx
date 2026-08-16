@@ -21,6 +21,8 @@ import {
   Archive,
   Calendar,
   CheckSquare,
+  FileUp,
+  MoreHorizontal,
   Plus,
   Search,
   Trash2,
@@ -52,33 +54,105 @@ type Task = {
   coverColor?: string | null;
   checklistJson?: string | null;
   archived?: boolean;
-  case: { id: string; caseNo: string; title: string };
+  caseId?: string | null;
+  meetingId?: string | null;
+  case?: { id: string; caseNo: string; title: string } | null;
+  meeting?: { id: string; title: string; meetingAt?: string | null } | null;
   assignee?: { id?: string; name: string } | null;
+};
+
+type Meeting = {
+  id: string;
+  title: string;
+  meetingAt: string | null;
+  sourceName?: string | null;
+  sortOrder?: number;
+  _count?: { tasks: number };
 };
 
 type CaseOpt = { id: string; caseNo: string; title: string };
 type UserOpt = { id: string; name: string };
 
-function applyMove(list: Task[], activeCardId: string, overId: string): Task[] {
+type PreviewAction = {
+  title: string;
+  assigneeName: string | null;
+  assigneeId: string | null;
+  matchedName?: string | null;
+  dueAt: string | null;
+  notes: string | null;
+};
+
+type MinutesPreview = {
+  title: string;
+  meetingAt: string | null;
+  sourceName: string;
+  rawText: string;
+  actions: PreviewAction[];
+  mock?: boolean;
+};
+
+function meetingDropId(id: string) {
+  return `meeting:${id}`;
+}
+
+function parseMeetingDropId(id: string) {
+  return id.startsWith("meeting:") ? id.slice("meeting:".length) : null;
+}
+
+/** Case-status board move only (never mixes with meeting cards). */
+function applyCaseMove(list: Task[], activeCardId: string, overId: string): Task[] {
   const from = list.find((t) => t.id === activeCardId);
-  if (!from) return list;
+  if (!from || from.meetingId) return list;
+  const overMeeting = parseMeetingDropId(overId);
+  if (overMeeting) return list;
   const overIsColumn = TASK_COLUMNS.includes(overId as TaskColumnId);
   const overTask = list.find((t) => t.id === overId);
+  if (overTask?.meetingId) return list;
   const nextStatus = overIsColumn
     ? (overId as TaskColumnId)
     : ((overTask?.status || from.status) as TaskColumnId);
   const without = list.filter((t) => t.id !== activeCardId);
   const target = without
-    .filter((t) => t.status === nextStatus)
+    .filter((t) => !t.meetingId && t.status === nextStatus)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   let index = target.length;
-  if (overTask && overTask.status === nextStatus) {
+  if (overTask && !overTask.meetingId && overTask.status === nextStatus) {
     index = target.findIndex((t) => t.id === overTask.id);
     if (index < 0) index = target.length;
   }
   target.splice(index, 0, { ...from, status: nextStatus });
   const reindexed = target.map((t, i) => ({ ...t, sortOrder: i }));
-  return [...without.filter((t) => t.status !== nextStatus), ...reindexed];
+  return [...without.filter((t) => t.meetingId || t.status !== nextStatus), ...reindexed];
+}
+
+/** Reorder only inside the same meeting list. */
+function applyMeetingMove(list: Task[], activeCardId: string, overId: string): Task[] {
+  const from = list.find((t) => t.id === activeCardId);
+  if (!from?.meetingId) return list;
+  const dropMeeting = parseMeetingDropId(overId);
+  const overTask = list.find((t) => t.id === overId);
+  const meetingId = dropMeeting || overTask?.meetingId;
+  if (!meetingId || meetingId !== from.meetingId) return list;
+
+  const without = list.filter((t) => t.id !== activeCardId);
+  const target = without
+    .filter((t) => t.meetingId === meetingId)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  let index = target.length;
+  if (overTask && overTask.meetingId === meetingId) {
+    index = target.findIndex((t) => t.id === overTask.id);
+    if (index < 0) index = target.length;
+  }
+  target.splice(index, 0, from);
+  const reindexed = target.map((t, i) => ({ ...t, sortOrder: i }));
+  return [...without.filter((t) => t.meetingId !== meetingId), ...reindexed];
+}
+
+function applyMove(list: Task[], activeCardId: string, overId: string): Task[] {
+  const from = list.find((t) => t.id === activeCardId);
+  if (!from) return list;
+  if (from.meetingId) return applyMeetingMove(list, activeCardId, overId);
+  return applyCaseMove(list, activeCardId, overId);
 }
 
 function dueTone(task: Task) {
@@ -97,6 +171,9 @@ function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
   const cover = labelMeta(task.coverColor || "");
   const remain = daysRemaining(task.dueAt);
   const overdue = remain !== null && remain < 0 && task.status !== "DONE";
+  const badge = task.meetingId
+    ? "會議"
+    : task.case?.caseNo || "—";
 
   return (
     <div
@@ -139,7 +216,14 @@ function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
               {formatDay(task.dueAt)}
             </span>
           )}
-          <span className="rounded bg-slate-100 px-1.5 py-0.5">{task.case.caseNo}</span>
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5",
+              task.meetingId ? "bg-purple-100 text-purple-800" : "bg-slate-100",
+            )}
+          >
+            {badge}
+          </span>
           {task.assignee?.name && (
             <span
               title={task.assignee.name}
@@ -165,7 +249,11 @@ function SortableCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
-    data: { type: "card", status: task.status },
+    data: {
+      type: "card",
+      status: task.status,
+      meetingId: task.meetingId || null,
+    },
   });
   return (
     <div
@@ -187,10 +275,10 @@ function ColumnDrop({
   id,
   children,
 }: {
-  id: TaskColumnId;
+  id: string;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id, data: { type: "column", status: id } });
+  const { setNodeRef, isOver } = useDroppable({ id, data: { type: "column", id } });
   return (
     <div
       ref={setNodeRef}
@@ -206,6 +294,7 @@ function ColumnDrop({
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [archived, setArchived] = useState<Task[]>([]);
   const [cases, setCases] = useState<CaseOpt[]>([]);
   const [users, setUsers] = useState<UserOpt[]>([]);
@@ -219,16 +308,22 @@ export default function TasksPage() {
   const [composer, setComposer] = useState<TaskColumnId | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftCaseId, setDraftCaseId] = useState("");
+  const [preview, setPreview] = useState<MinutesPreview | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [menuMeetingId, setMenuMeetingId] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const justDragged = useRef(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   async function load() {
-    const [taskRes, archRes, caseRes, settingsRes] = await Promise.all([
+    const [taskRes, archRes, caseRes, settingsRes, meetingRes] = await Promise.all([
       apiFetch<Task[]>("/api/tasks"),
       apiFetch<Task[]>("/api/tasks?archived=1"),
       apiFetch<CaseOpt[]>("/api/cases"),
       apiFetch<{ users?: UserOpt[] }>("/api/settings"),
+      apiFetch<Meeting[]>("/api/meetings"),
     ]);
     if (!taskRes.ok) {
       setTasks([]);
@@ -238,6 +333,7 @@ export default function TasksPage() {
       setError("");
     }
     setArchived(archRes.ok ? asArray<Task>(archRes.data) : []);
+    setMeetings(meetingRes.ok ? asArray<Meeting>(meetingRes.data) : []);
     if (caseRes.ok) {
       const rows = asArray<CaseOpt>(caseRes.data).map((c) => ({
         id: c.id,
@@ -257,7 +353,12 @@ export default function TasksPage() {
   const visible = useMemo(() => {
     return tasks.filter((t) => {
       const q = query.trim().toLowerCase();
-      if (q && !`${t.title} ${t.case.caseNo} ${t.assignee?.name || ""}`.toLowerCase().includes(q)) {
+      if (
+        q &&
+        !`${t.title} ${t.case?.caseNo || ""} ${t.meeting?.title || ""} ${t.assignee?.name || ""}`
+          .toLowerCase()
+          .includes(q)
+      ) {
         return false;
       }
       if (labelFilter && !parseLabels(t.labelsJson).includes(labelFilter)) return false;
@@ -265,29 +366,43 @@ export default function TasksPage() {
     });
   }, [tasks, query, labelFilter]);
 
+  const caseVisible = useMemo(() => visible.filter((t) => !t.meetingId), [visible]);
   const activeTask = tasks.find((t) => t.id === activeId) || null;
 
   function columnTasks(col: string) {
-    return visible
+    return caseVisible
       .filter((t) => t.status === col)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
-  function moveLocal(activeCardId: string, overId: string) {
-    setTasks((prev) => applyMove(prev, activeCardId, overId));
+  function meetingTasks(meetingId: string) {
+    return visible
+      .filter((t) => t.meetingId === meetingId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }
 
   async function persistOrder(next: Task[]) {
-    const reorder = TASK_COLUMNS.flatMap((col) =>
+    const caseReorder = TASK_COLUMNS.flatMap((col) =>
       next
-        .filter((t) => t.status === col)
+        .filter((t) => !t.meetingId && t.status === col)
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
         .map((t, i) => ({ id: t.id, status: t.status, sortOrder: i })),
+    );
+    const meetingReorder = meetings.flatMap((m) =>
+      next
+        .filter((t) => t.meetingId === m.id)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((t, i) => ({
+          id: t.id,
+          status: t.status,
+          sortOrder: i,
+          meetingId: m.id,
+        })),
     );
     await apiFetch("/api/tasks", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reorder }),
+      body: JSON.stringify({ reorder: [...caseReorder, ...meetingReorder] }),
     });
   }
 
@@ -302,10 +417,21 @@ export default function TasksPage() {
     if (!overId || overId === activeCardId) return;
     const from = tasks.find((t) => t.id === activeCardId);
     if (!from) return;
+    if (from.meetingId) {
+      const overTask = tasks.find((t) => t.id === overId);
+      const dropMeeting = parseMeetingDropId(overId);
+      if (dropMeeting === from.meetingId || overTask?.meetingId === from.meetingId) {
+        setTasks((prev) => applyMove(prev, activeCardId, overId));
+      }
+      return;
+    }
     const overIsColumn = TASK_COLUMNS.includes(overId as TaskColumnId);
     const overTask = tasks.find((t) => t.id === overId);
+    if (overTask?.meetingId || parseMeetingDropId(overId)) return;
     const nextStatus = overIsColumn ? overId : overTask?.status;
-    if (nextStatus && nextStatus !== from.status) moveLocal(activeCardId, overId);
+    if (nextStatus && nextStatus !== from.status) {
+      setTasks((prev) => applyMove(prev, activeCardId, overId));
+    }
   }
 
   async function onDragEnd(e: DragEndEvent) {
@@ -358,15 +484,107 @@ export default function TasksPage() {
     await load();
   }
 
+  async function onPickMinutes(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiFetch<MinutesPreview>("/api/meetings", { method: "POST", body: form });
+    setUploading(false);
+    if (!res.ok) {
+      setError(res.error || "上傳失敗");
+      return;
+    }
+    if (!res.data) {
+      setError("上傳失敗");
+      return;
+    }
+    setPreview({
+      title: res.data.title,
+      meetingAt: res.data.meetingAt,
+      sourceName: res.data.sourceName,
+      rawText: res.data.rawText,
+      actions: res.data.actions || [],
+      mock: res.data.mock,
+    });
+  }
+
+  async function confirmMinutes() {
+    if (!preview || preview.actions.length === 0) return;
+    setConfirming(true);
+    const res = await apiFetch("/api/meetings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        confirm: true,
+        title: preview.title,
+        meetingAt: preview.meetingAt,
+        sourceName: preview.sourceName,
+        rawText: preview.rawText,
+        actions: preview.actions,
+      }),
+    });
+    setConfirming(false);
+    if (!res.ok) {
+      setError(res.error || "建立失敗");
+      return;
+    }
+    setPreview(null);
+    await load();
+  }
+
+  async function renameMeeting(id: string) {
+    const current = meetings.find((m) => m.id === id);
+    const next = window.prompt("列表名稱", current?.title || "");
+    if (!next?.trim()) return;
+    await apiFetch(`/api/meetings/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: next.trim() }),
+    });
+    setMenuMeetingId(null);
+    await load();
+  }
+
+  async function deleteMeeting(id: string) {
+    if (!window.confirm("刪除此會議列表及其中所有卡片？")) return;
+    await apiFetch(`/api/meetings/${id}`, { method: "DELETE" });
+    setMenuMeetingId(null);
+    await load();
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="axon-title text-2xl font-semibold">任務管理</h1>
-          <p className="text-sm axon-muted">拖曳卡片換欄，點開卡片編輯標籤、期限與清單</p>
+          <p className="text-sm axon-muted">
+            左側為事件跟進；右側每份會議紀錄自成一個列表，互不混淆
+          </p>
           {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt,.md,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              e.target.value = "";
+              onPickMinutes(f);
+            }}
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileRef.current?.click()}
+            className="axon-btn axon-btn-primary min-h-9 px-3 text-sm"
+          >
+            <FileUp size={14} />
+            {uploading ? "分析中…" : "上傳會議紀錄"}
+          </button>
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" />
             <input
@@ -524,6 +742,99 @@ export default function TasksPage() {
                   </section>
                 );
               })}
+
+              {meetings.length > 0 && (
+                <div className="mx-1 flex w-6 shrink-0 flex-col items-center justify-center">
+                  <div className="h-full w-px bg-purple-300/80" />
+                </div>
+              )}
+
+              {meetings.map((m) => {
+                const rows = meetingTasks(m.id);
+                return (
+                  <section
+                    key={m.id}
+                    className="flex w-[280px] shrink-0 flex-col rounded-xl bg-[#f3e8ff] p-2 shadow-sm ring-1 ring-purple-200/60"
+                  >
+                    <div className="mb-2 flex items-start gap-2 px-1 py-1">
+                      <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#c377e0]" />
+                      <div className="min-w-0 flex-1">
+                        <h2 className="truncate text-sm font-semibold text-purple-900">{m.title}</h2>
+                        <p className="text-[10px] text-purple-700/80">
+                          會議列表
+                          {m.meetingAt ? ` · ${formatDay(m.meetingAt)}` : ""}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] text-slate-500">
+                        {rows.length}
+                      </span>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="rounded p-1 text-purple-700 hover:bg-white/70"
+                          onClick={() =>
+                            setMenuMeetingId((cur) => (cur === m.id ? null : m.id))
+                          }
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
+                        {menuMeetingId === m.id && (
+                          <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-lg bg-white py-1 text-sm shadow-lg ring-1 ring-slate-200">
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-1.5 text-left hover:bg-slate-50"
+                              onClick={() => renameMeeting(m.id)}
+                            >
+                              重新命名
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-1.5 text-left text-rose-600 hover:bg-rose-50"
+                              onClick={() => deleteMeeting(m.id)}
+                            >
+                              刪除列表
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <SortableContext items={rows.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                      <ColumnDrop id={meetingDropId(m.id)}>
+                        {rows.map((t) => (
+                          <SortableCard
+                            key={t.id}
+                            task={t}
+                            onOpen={setOpen}
+                            suppressOpen={() => justDragged.current}
+                          />
+                        ))}
+                      </ColumnDrop>
+                    </SortableContext>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const title = window.prompt("新行動項目");
+                        if (!title?.trim()) return;
+                        await apiFetch("/api/tasks", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            title: title.trim(),
+                            meetingId: m.id,
+                            labelsJson: JSON.stringify(["purple"]),
+                            coverColor: "purple",
+                          }),
+                        });
+                        await load();
+                      }}
+                      className="mt-1 flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-purple-800 hover:bg-white/70"
+                    >
+                      <Plus size={14} />
+                      新增卡片
+                    </button>
+                  </section>
+                );
+              })}
             </div>
           </div>
           <DragOverlay>{activeTask ? <TaskCardFace task={activeTask} /> : null}</DragOverlay>
@@ -534,7 +845,7 @@ export default function TasksPage() {
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-4 py-3">任務</th>
-                <th className="px-4 py-3">事件</th>
+                <th className="px-4 py-3">來源</th>
                 <th className="px-4 py-3">負責人</th>
                 <th className="px-4 py-3">期限</th>
                 <th className="px-4 py-3">狀態</th>
@@ -542,22 +853,40 @@ export default function TasksPage() {
             </thead>
             <tbody>
               {visible.map((t) => (
-                <tr key={t.id} className="cursor-pointer border-t hover:bg-slate-50" onClick={() => setOpen(t)}>
+                <tr
+                  key={t.id}
+                  className="cursor-pointer border-t hover:bg-slate-50"
+                  onClick={() => setOpen(t)}
+                >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {parseLabels(t.labelsJson).slice(0, 3).map((id) => {
-                        const meta = labelMeta(id);
-                        return meta ? (
-                          <span key={id} className="h-2 w-2 rounded-full" style={{ background: meta.hex }} />
-                        ) : null;
-                      })}
+                      {parseLabels(t.labelsJson)
+                        .slice(0, 3)
+                        .map((id) => {
+                          const meta = labelMeta(id);
+                          return meta ? (
+                            <span
+                              key={id}
+                              className="h-2 w-2 rounded-full"
+                              style={{ background: meta.hex }}
+                            />
+                          ) : null;
+                        })}
                       {t.title}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Link href={`/cases/${t.case.id}`} className="text-[var(--axon-blue)]" onClick={(e) => e.stopPropagation()}>
-                      {t.case.caseNo}
-                    </Link>
+                    {t.case ? (
+                      <Link
+                        href={`/cases/${t.case.id}`}
+                        className="text-[var(--axon-blue)]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {t.case.caseNo}
+                      </Link>
+                    ) : (
+                      <span className="text-purple-700">{t.meeting?.title || "會議"}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">{t.assignee?.name || "—"}</td>
                   <td className="px-4 py-3">{t.dueAt ? formatDay(t.dueAt) : "—"}</td>
@@ -574,11 +903,17 @@ export default function TasksPage() {
       )}
 
       {open && (
-        <CardModal
-          task={open}
+        <CardModal task={open} users={users} onClose={() => setOpen(null)} onSave={saveTask} />
+      )}
+
+      {preview && (
+        <MinutesPreviewModal
+          preview={preview}
           users={users}
-          onClose={() => setOpen(null)}
-          onSave={saveTask}
+          confirming={confirming}
+          onChange={setPreview}
+          onClose={() => setPreview(null)}
+          onConfirm={confirmMinutes}
         />
       )}
 
@@ -587,7 +922,10 @@ export default function TasksPage() {
           <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">已封存卡片</h2>
-              <button onClick={() => setShowArchive(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <button
+                onClick={() => setShowArchive(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              >
                 <X size={16} />
               </button>
             </div>
@@ -597,7 +935,9 @@ export default function TasksPage() {
                 <div key={t.id} className="flex items-center gap-2 rounded-lg bg-slate-50 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{t.title}</div>
-                    <div className="text-xs text-slate-400">{t.case.caseNo}</div>
+                    <div className="text-xs text-slate-400">
+                      {t.case?.caseNo || t.meeting?.title || "—"}
+                    </div>
                   </div>
                   <button
                     className="text-xs text-[var(--axon-blue)]"
@@ -636,6 +976,135 @@ export default function TasksPage() {
   );
 }
 
+function MinutesPreviewModal({
+  preview,
+  users,
+  confirming,
+  onChange,
+  onClose,
+  onConfirm,
+}: {
+  preview: MinutesPreview;
+  users: UserOpt[];
+  confirming: boolean;
+  onChange: (p: MinutesPreview) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  function updateAction(idx: number, patch: Partial<PreviewAction>) {
+    const actions = preview.actions.map((a, i) => (i === idx ? { ...a, ...patch } : a));
+    onChange({ ...preview, actions });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-10">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--axon-ink)]">確認會議行動項目</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              來自 {preview.sourceName}
+              {preview.mock ? " · Mock 分析" : ""}
+              。建立後會在看板右側新增一個會議列表。
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mb-4 grid gap-2 sm:grid-cols-2">
+          <label className="text-xs text-slate-500">
+            列表名稱
+            <input
+              className="axon-input mt-1 min-h-0 py-2 text-sm"
+              value={preview.title}
+              onChange={(e) => onChange({ ...preview, title: e.target.value })}
+            />
+          </label>
+          <label className="text-xs text-slate-500">
+            會議日期
+            <input
+              type="date"
+              className="axon-input mt-1 min-h-0 py-2 text-sm"
+              value={preview.meetingAt || ""}
+              onChange={(e) => onChange({ ...preview, meetingAt: e.target.value || null })}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-2">
+          {preview.actions.map((a, idx) => (
+            <div
+              key={idx}
+              className="grid gap-2 rounded-xl border border-[var(--axon-line)] bg-slate-50/80 p-3 sm:grid-cols-[1fr_140px_120px_auto]"
+            >
+              <input
+                className="axon-input min-h-0 py-2 text-sm"
+                value={a.title}
+                onChange={(e) => updateAction(idx, { title: e.target.value })}
+                placeholder="行動項目"
+              />
+              <select
+                className="axon-input min-h-0 py-2 text-xs"
+                value={a.assigneeId || ""}
+                onChange={(e) =>
+                  updateAction(idx, {
+                    assigneeId: e.target.value || null,
+                    assigneeName: users.find((u) => u.id === e.target.value)?.name || a.assigneeName,
+                  })
+                }
+              >
+                <option value="">{a.assigneeName ? `未對應：${a.assigneeName}` : "未指派"}</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="date"
+                className="axon-input min-h-0 py-2 text-xs"
+                value={a.dueAt || ""}
+                onChange={(e) => updateAction(idx, { dueAt: e.target.value || null })}
+              />
+              <button
+                type="button"
+                className="rounded-lg px-2 text-rose-600 hover:bg-rose-50"
+                onClick={() =>
+                  onChange({
+                    ...preview,
+                    actions: preview.actions.filter((_, i) => i !== idx),
+                  })
+                }
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+          {preview.actions.length === 0 && (
+            <p className="py-6 text-center text-sm text-slate-400">沒有行動項目</p>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={onClose} className="axon-btn axon-btn-ghost min-h-9 px-4 text-sm">
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={confirming || preview.actions.length === 0}
+            onClick={onConfirm}
+            className="axon-btn axon-btn-primary min-h-9 px-4 text-sm"
+          >
+            {confirming ? "建立中…" : `建立列表（${preview.actions.length}）`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CardModal({
   task,
   users,
@@ -647,6 +1116,7 @@ function CardModal({
   onClose: () => void;
   onSave: (id: string, patch: Record<string, unknown>) => Promise<void>;
 }) {
+  const isMeeting = Boolean(task.meetingId);
   const [title, setTitle] = useState(task.title);
   const [instructions, setInstructions] = useState(task.instructions || "");
   const [labels, setLabels] = useState(parseLabels(task.labelsJson));
@@ -691,21 +1161,41 @@ function CardModal({
                 className="w-full bg-transparent text-xl font-semibold text-slate-800 outline-none"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                onBlur={() => title.trim() && title !== task.title && onSave(task.id, { title: title.trim() })}
+                onBlur={() =>
+                  title.trim() && title !== task.title && onSave(task.id, { title: title.trim() })
+                }
               />
               <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white">
                 <X size={18} />
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              在列表{" "}
-              <span className="font-medium" style={{ color: COLUMN_THEME[status as TaskColumnId]?.ink }}>
-                {COLUMN_THEME[status as TaskColumnId]?.name || TASK_STATUS_LABELS[status]}
-              </span>
-              {" · "}
-              <Link href={`/cases/${task.case.id}`} className="text-[var(--axon-blue)]">
-                {task.case.caseNo} {task.case.title}
-              </Link>
+              {isMeeting ? (
+                <>
+                  會議列表{" "}
+                  <span className="font-medium text-purple-800">
+                    {task.meeting?.title || "會議"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  在列表{" "}
+                  <span
+                    className="font-medium"
+                    style={{ color: COLUMN_THEME[status as TaskColumnId]?.ink }}
+                  >
+                    {COLUMN_THEME[status as TaskColumnId]?.name || TASK_STATUS_LABELS[status]}
+                  </span>
+                  {task.case && (
+                    <>
+                      {" · "}
+                      <Link href={`/cases/${task.case.id}`} className="text-[var(--axon-blue)]">
+                        {task.case.caseNo} {task.case.title}
+                      </Link>
+                    </>
+                  )}
+                </>
+              )}
             </p>
 
             {labels.length > 0 && (
@@ -741,15 +1231,24 @@ function CardModal({
               <h3 className="mb-2 text-sm font-semibold text-slate-700">檢查清單</h3>
               <div className="space-y-1.5">
                 {checks.map((item) => (
-                  <label key={item.id} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                  <label
+                    key={item.id}
+                    className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm"
+                  >
                     <input
                       type="checkbox"
                       checked={item.checked}
                       onChange={() =>
-                        persistChecks(checks.map((c) => (c.id === item.id ? { ...c, checked: !c.checked } : c)))
+                        persistChecks(
+                          checks.map((c) =>
+                            c.id === item.id ? { ...c, checked: !c.checked } : c,
+                          ),
+                        )
                       }
                     />
-                    <span className={cn("flex-1", item.checked && "text-slate-400 line-through")}>{item.text}</span>
+                    <span className={cn("flex-1", item.checked && "text-slate-400 line-through")}>
+                      {item.text}
+                    </span>
                     <button
                       type="button"
                       className="text-slate-300 hover:text-rose-500"
@@ -795,7 +1294,9 @@ function CardModal({
           </div>
 
           <aside className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">加入到卡片</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              加入到卡片
+            </p>
             <label className="block text-xs text-slate-500">
               <span className="mb-1 flex items-center gap-1">
                 <UserRound size={12} /> 成員
@@ -846,7 +1347,10 @@ function CardModal({
                       setCover(next);
                       onSave(task.id, { coverColor: next || null });
                     }}
-                    className={cn("h-7 rounded", cover === l.id && "ring-2 ring-offset-1 ring-slate-700")}
+                    className={cn(
+                      "h-7 rounded",
+                      cover === l.id && "ring-2 ring-offset-1 ring-slate-700",
+                    )}
                     style={{ background: l.hex }}
                   />
                 ))}
@@ -864,23 +1368,42 @@ function CardModal({
                 }}
               />
             </label>
-            <label className="block text-xs text-slate-500">
-              移動到
-              <select
-                className="axon-input mt-1 min-h-0 py-2 text-sm"
-                value={status}
-                onChange={(e) => {
-                  setStatus(e.target.value);
-                  onSave(task.id, { status: e.target.value });
-                }}
-              >
-                {TASK_COLUMNS.map((c) => (
-                  <option key={c} value={c}>
-                    {COLUMN_THEME[c].name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!isMeeting && (
+              <label className="block text-xs text-slate-500">
+                移動到
+                <select
+                  className="axon-input mt-1 min-h-0 py-2 text-sm"
+                  value={status}
+                  onChange={(e) => {
+                    setStatus(e.target.value);
+                    onSave(task.id, { status: e.target.value });
+                  }}
+                >
+                  {TASK_COLUMNS.map((c) => (
+                    <option key={c} value={c}>
+                      {COLUMN_THEME[c].name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {isMeeting && (
+              <label className="block text-xs text-slate-500">
+                完成狀態
+                <select
+                  className="axon-input mt-1 min-h-0 py-2 text-sm"
+                  value={status}
+                  onChange={(e) => {
+                    setStatus(e.target.value);
+                    onSave(task.id, { status: e.target.value });
+                  }}
+                >
+                  <option value="PENDING">待處理</option>
+                  <option value="IN_PROGRESS">進行中</option>
+                  <option value="DONE">已完成</option>
+                </select>
+              </label>
+            )}
             <button
               type="button"
               className="axon-btn axon-btn-ghost w-full min-h-9 text-sm"
