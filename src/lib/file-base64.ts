@@ -34,6 +34,28 @@ export type MinutesProgress = {
   label: string;
 };
 
+export const MINUTES_PREVIEW_STORAGE_KEY = "axonbox:minutesPreview";
+
+/** Stash AI minutes analysis so Inbox can jump to /tasks analysis UI. */
+export function stashMinutesPreview(payload: MinutesPreviewPayload) {
+  try {
+    sessionStorage.setItem(MINUTES_PREVIEW_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+export function takeMinutesPreview(): MinutesPreviewPayload | null {
+  try {
+    const raw = sessionStorage.getItem(MINUTES_PREVIEW_STORAGE_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(MINUTES_PREVIEW_STORAGE_KEY);
+    return JSON.parse(raw) as MinutesPreviewPayload;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Upload minutes as JSON base64 with upload progress + AI wait stage.
  * Same-origin cookies are included for NextAuth.

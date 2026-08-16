@@ -1,13 +1,20 @@
 import { prisma } from "@/lib/prisma";
-import { extractFromInput, type ExtractResult } from "@/lib/ai";
+import { extractFromInput, transcribeAudio, type ExtractResult } from "@/lib/ai";
 import { nextCaseNo } from "@/lib/case-no";
 import { resolveActorId } from "@/lib/session";
 import {
   listConnectorStatus,
   parseIntoInbox,
   type InboxChannel,
+  type InboxAttachment,
   type NormalizedInboxMessage,
 } from "@/lib/connectors";
+import {
+  isWhatsAppCaseSeparator,
+  normalizePhone,
+  stripWhatsAppCaseSeparator,
+  whatsappBundleWindowMs,
+} from "@/lib/connectors/whatsapp";
 import { mailboxAlias } from "@/lib/email-inbound";
 import { resolveUserByMailbox } from "@/lib/inbound-key";
 import {
@@ -17,6 +24,7 @@ import {
   evidenceTypeFor,
   isDocumentFile,
   isImageFile,
+  MAX_FILES,
   parseInboxAttachments,
 } from "@/lib/inbound-files";
 import { saveBuffer } from "@/lib/upload";
@@ -32,12 +40,94 @@ function evidenceSource(channel: string) {
   return "UPLOAD";
 }
 
+function isAudioFile(file: { mime?: string; name?: string }) {
+  if (file.mime?.startsWith("audio/")) return true;
+  return /\.(ogg|opus|mp3|m4a|wav|webm|aac)$/i.test(file.name || "");
+}
+
+async function resolveSenderByPhone(phoneRaw?: string | null) {
+  const phone = normalizePhone(phoneRaw);
+  if (!phone || phone.length < 6) return null;
+
+  const users = await prisma.user.findMany({
+    where: { phone: { not: null } },
+    select: { id: true, name: true, phone: true },
+    take: 200,
+  });
+  const user = users.find((u) => {
+    const p = normalizePhone(u.phone);
+    return p && (p === phone || p.endsWith(phone) || phone.endsWith(p));
+  });
+  if (user) return { id: user.id, name: user.name, kind: "user" as const };
+
+  const subs = await prisma.subcontractor.findMany({
+    where: { phone: { not: null } },
+    select: { id: true, name: true, phone: true, userId: true },
+    take: 200,
+  });
+  const sub = subs.find((s) => {
+    const p = normalizePhone(s.phone);
+    return p && (p === phone || p.endsWith(phone) || phone.endsWith(p));
+  });
+  if (sub) {
+    return {
+      id: sub.userId || null,
+      name: sub.name,
+      kind: "subcontractor" as const,
+    };
+  }
+  return null;
+}
+
+function phoneFromMessage(m: NormalizedInboxMessage) {
+  const raw =
+    m.rawPayload && typeof m.rawPayload === "object"
+      ? (m.rawPayload as Record<string, unknown>)
+      : {};
+  return normalizePhone(
+    String(raw.phone || raw.from || "") || m.sender.replace(/\D/g, ""),
+  );
+}
+
+function mergeAttachments(
+  existingJson: string | null | undefined,
+  incoming: InboxAttachment[] | undefined,
+): InboxAttachment[] {
+  const prev = parseInboxAttachments(existingJson).map((f) => ({
+    name: f.name,
+    mime: f.mime,
+    base64: f.base64,
+  }));
+  const next = [...prev];
+  for (const att of incoming || []) {
+    if (next.length >= MAX_FILES) break;
+    if (typeof att === "string") {
+      const m = att.match(/^data:([^;]+);base64,(.+)$/);
+      if (m) next.push({ name: "attachment", mime: m[1], base64: m[2] });
+      continue;
+    }
+    if (att?.base64) {
+      next.push({
+        name: att.name || "attachment",
+        mime: att.mime || "application/octet-stream",
+        base64: String(att.base64).replace(/^data:[^;]+;base64,/, ""),
+      });
+    }
+  }
+  return next.slice(0, MAX_FILES);
+}
+
 export async function persistNormalizedMessages(
   projectId: string,
   messages: NormalizedInboxMessage[],
 ) {
   const created = [];
   for (const m of messages) {
+    if (m.channel === "WHATSAPP") {
+      const row = await persistOrBundleWhatsApp(projectId, m);
+      if (row) created.push(row);
+      continue;
+    }
     if (!m.body?.trim() && !m.subject?.trim() && !(m.attachments || []).length) continue;
     if (m.externalId) {
       const existing = await prisma.inboxMessage.findFirst({
@@ -84,6 +174,153 @@ export async function persistNormalizedMessages(
   return created;
 }
 
+async function persistOrBundleWhatsApp(
+  projectId: string,
+  m: NormalizedInboxMessage,
+) {
+  if (!m.body?.trim() && !(m.attachments || []).length) return null;
+
+  if (m.externalId) {
+    const existing = await prisma.inboxMessage.findFirst({
+      where: { externalId: m.externalId, channel: "WHATSAPP" },
+    });
+    if (existing) return existing;
+  }
+
+  const phone = phoneFromMessage(m);
+  const matched = await resolveSenderByPhone(phone || m.sender);
+  const displaySender = matched?.name || m.sender;
+  const forwardedByUserId = matched?.id || null;
+
+  let body = m.body || "";
+  const separator = isWhatsAppCaseSeparator(body);
+  if (separator) {
+    body = stripWhatsAppCaseSeparator(body);
+    // Separator-only with no files: still open a fresh empty-ish row only if we have attachments
+    if (!body.trim() && !(m.attachments || []).length) {
+      // Close current open bundle by bumping past window — create a marker? Plan says start new case.
+      // Separator alone with no remainder: just force next messages into a new row by closing open ones.
+      await prisma.inboxMessage.updateMany({
+        where: {
+          projectId,
+          channel: "WHATSAPP",
+          status: { in: ["PENDING", "ANALYZED"] },
+          ...(phone
+            ? {
+                OR: [
+                  { rawPayload: { contains: `"phone":"${phone}"` } },
+                  { sender: displaySender },
+                ],
+              }
+            : { sender: displaySender }),
+        },
+        data: { receivedAt: new Date(Date.now() - whatsappBundleWindowMs() - 1000) },
+      });
+      return null;
+    }
+  }
+
+  const now = m.receivedAt || new Date();
+  const windowStart = new Date(now.getTime() - whatsappBundleWindowMs());
+
+  let open =
+    !separator && phone
+      ? await prisma.inboxMessage.findFirst({
+          where: {
+            projectId,
+            channel: "WHATSAPP",
+            status: { in: ["PENDING", "ANALYZED"] },
+            receivedAt: { gte: windowStart },
+            OR: [
+              { rawPayload: { contains: `"phone":"${phone}"` } },
+              { sender: displaySender },
+            ],
+          },
+          orderBy: { receivedAt: "desc" },
+        })
+      : null;
+
+  if (!open && !separator && !phone) {
+    open = await prisma.inboxMessage.findFirst({
+      where: {
+        projectId,
+        channel: "WHATSAPP",
+        status: { in: ["PENDING", "ANALYZED"] },
+        receivedAt: { gte: windowStart },
+        sender: displaySender,
+      },
+      orderBy: { receivedAt: "desc" },
+    });
+  }
+
+  const raw =
+    m.rawPayload && typeof m.rawPayload === "object"
+      ? (m.rawPayload as Record<string, unknown>)
+      : {};
+
+  if (open) {
+    const mergedBody = [open.body, body].filter((s) => s?.trim()).join("\n");
+    const attachments = mergeAttachments(open.attachments, m.attachments);
+    return prisma.inboxMessage.update({
+      where: { id: open.id },
+      data: {
+        body: mergedBody,
+        attachments: JSON.stringify(attachments),
+        receivedAt: now,
+        status: "PENDING",
+        aiJson: null,
+        sender: displaySender,
+        forwardedByUserId: forwardedByUserId || open.forwardedByUserId,
+        rawPayload: JSON.stringify({
+          ...raw,
+          from: m.sender,
+          phone,
+          profileName: matched?.name || raw.profileName,
+          forwardedByUserId,
+          bundled: true,
+          previousExternalIds: [
+            ...((() => {
+              try {
+                const prev = open.rawPayload ? JSON.parse(open.rawPayload) : {};
+                return Array.isArray(prev.previousExternalIds)
+                  ? prev.previousExternalIds
+                  : [];
+              } catch {
+                return [];
+              }
+            })()),
+            open.externalId,
+            m.externalId,
+          ].filter(Boolean),
+        }),
+      },
+    });
+  }
+
+  return prisma.inboxMessage.create({
+    data: {
+      channel: "WHATSAPP",
+      externalId: m.externalId,
+      sender: displaySender,
+      subject: m.subject || null,
+      body,
+      rawPayload: JSON.stringify({
+        ...raw,
+        from: m.sender,
+        phone,
+        profileName: matched?.name || raw.profileName,
+        forwardedByUserId,
+        forwardedByName: matched?.name || null,
+      }),
+      attachments: JSON.stringify(m.attachments || []),
+      receivedAt: now,
+      projectId,
+      forwardedByUserId,
+      status: "PENDING",
+    },
+  });
+}
+
 /** Persist inbound mail and run LLM → proposed case (no task until approved). */
 export async function ingestAndPropose(
   projectId: string,
@@ -96,7 +333,8 @@ export async function ingestAndPropose(
       proposed.push({ message: row, extract: row.aiJson ? JSON.parse(row.aiJson) : null });
       continue;
     }
-    if (row.status === "ANALYZED" && row.aiJson) {
+    // WhatsApp bundles clear aiJson on append; email may already be ANALYZED
+    if (row.channel !== "WHATSAPP" && row.status === "ANALYZED" && row.aiJson) {
       proposed.push({ message: row, extract: JSON.parse(row.aiJson) });
       continue;
     }
@@ -129,12 +367,38 @@ export async function analyzeInboxMessage(
   const message = await prisma.inboxMessage.findUnique({ where: { id } });
   if (!message) throw new Error("not found");
 
-  const text = [message.subject ? `主题：${message.subject}` : "", message.body]
-    .filter(Boolean)
-    .join("\n");
   const files = parseInboxAttachments(message.attachments);
   const photo = files.find(isImageFile);
   const docs = files.filter(isDocumentFile);
+  const audios = files.filter(isAudioFile);
+
+  const voiceBits: string[] = [];
+  for (const audio of audios.slice(0, 3)) {
+    try {
+      const buf = Buffer.from(audio.base64, "base64");
+      const t = await transcribeAudio(buf, audio.name || "voice.ogg");
+      if (t.text?.trim()) voiceBits.push(`【語音】${t.text.trim()}`);
+    } catch (err) {
+      console.error("[inbox] voice STT failed", err);
+    }
+  }
+
+  let body = message.body || "";
+  if (voiceBits.length) {
+    // Avoid duplicating if already transcribed on a previous append
+    const fresh = voiceBits.filter((v) => !body.includes(v));
+    if (fresh.length) {
+      body = [body, ...fresh].filter(Boolean).join("\n");
+      await prisma.inboxMessage.update({
+        where: { id },
+        data: { body },
+      });
+    }
+  }
+
+  const text = [message.subject ? `主题：${message.subject}` : "", body]
+    .filter(Boolean)
+    .join("\n");
 
   let imageBase64 = opts?.imageBase64;
   let imageMime = opts?.imageMime || "image/jpeg";
@@ -152,12 +416,13 @@ export async function analyzeInboxMessage(
   });
 
   const needDoc =
-    message.channel === "EMAIL" &&
     docs.length > 0 &&
-    (emailIsThin(text) ||
-      emailRefersToAttachment(text) ||
-      extract.confidence < 0.45 ||
-      extract.mock);
+    (message.channel === "WHATSAPP" ||
+      (message.channel === "EMAIL" &&
+        (emailIsThin(text) ||
+          emailRefersToAttachment(text) ||
+          extract.confidence < 0.45 ||
+          extract.mock)));
 
   if (needDoc) {
     const excerpts: string[] = [];
@@ -172,7 +437,7 @@ export async function analyzeInboxMessage(
         imageBase64,
         imageMime,
         filename: `${message.channel}-${message.sender}`,
-        mode: "email",
+        mode: message.channel === "EMAIL" ? "email" : "site",
         documentNote: excerpts.join("\n\n"),
       });
     }
@@ -183,6 +448,7 @@ export async function analyzeInboxMessage(
     data: {
       status: message.status === "PROCESSED" ? message.status : "ANALYZED",
       aiJson: JSON.stringify(extract),
+      body,
     },
   });
 

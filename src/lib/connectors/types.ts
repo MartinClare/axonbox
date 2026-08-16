@@ -45,7 +45,7 @@ export interface InboxConnector {
 export function connectorConfigured(channel: InboxChannel): boolean {
   switch (channel) {
     case "WHATSAPP":
-      return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+      return Boolean(process.env.YCLOUD_API_KEY?.trim());
     case "EMAIL":
       return Boolean(
         process.env.INBOUND_EMAIL_ADDRESS ||

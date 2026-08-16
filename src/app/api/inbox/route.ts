@@ -100,6 +100,9 @@ export async function GET(req: NextRequest) {
       imapConfigured: inboundImapConfigured(),
       resendConfigured: inboundResendConfigured(),
       webhookPath: "/api/connectors/email/webhook",
+      whatsappConfigured: Boolean(process.env.YCLOUD_API_KEY?.trim()),
+      whatsappNumber: process.env.WHATSAPP_DISPLAY_NUMBER?.trim() || null,
+      whatsappWebhookPath: "/api/connectors/whatsapp/webhook",
     },
   });
 }

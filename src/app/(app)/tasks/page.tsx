@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -31,7 +32,7 @@ import {
 } from "lucide-react";
 import { STATUS_COLORS, TASK_STATUS_LABELS, cn, daysRemaining, formatDay } from "@/lib/labels";
 import { apiFetch, asArray } from "@/lib/api-client";
-import { type MinutesProgress, uploadMinutesPreview } from "@/lib/file-base64";
+import { type MinutesProgress, takeMinutesPreview, uploadMinutesPreview } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 import {
   COLUMN_THEME,
@@ -295,6 +296,7 @@ function ColumnDrop({
 }
 
 export default function TasksPage() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [archived, setArchived] = useState<Task[]>([]);
@@ -315,6 +317,7 @@ export default function TasksPage() {
   const [uploadProgress, setUploadProgress] = useState<MinutesProgress | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [menuMeetingId, setMenuMeetingId] = useState<string | null>(null);
+  const [focusMeetingId, setFocusMeetingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const justDragged = useRef(false);
 
@@ -352,6 +355,34 @@ export default function TasksPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wantPreview =
+      params.get("minutesPreview") === "1" || params.get("minutesPreview") === "true";
+    if (!wantPreview) return;
+    const stashed = takeMinutesPreview();
+    if (stashed) {
+      setPreview({
+        title: stashed.title,
+        meetingAt: stashed.meetingAt,
+        sourceName: stashed.sourceName,
+        rawText: stashed.rawText,
+        actions: stashed.actions || [],
+        mock: stashed.mock,
+      });
+    }
+    router.replace("/tasks", { scroll: false });
+  }, [router]);
+
+  useEffect(() => {
+    if (!focusMeetingId) return;
+    const el = document.getElementById(`meeting-${focusMeetingId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+    setFocusMeetingId(null);
+  }, [focusMeetingId, meetings]);
 
   const visible = useMemo(() => {
     return tasks.filter((t) => {
@@ -515,7 +546,7 @@ export default function TasksPage() {
   async function confirmMinutes() {
     if (!preview || preview.actions.length === 0) return;
     setConfirming(true);
-    const res = await apiFetch("/api/meetings", {
+    const res = await apiFetch<Meeting>("/api/meetings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -534,6 +565,7 @@ export default function TasksPage() {
     }
     setPreview(null);
     await load();
+    if (res.data?.id) setFocusMeetingId(res.data.id);
   }
 
   async function renameMeeting(id: string) {
@@ -756,6 +788,7 @@ export default function TasksPage() {
                 return (
                   <section
                     key={m.id}
+                    id={`meeting-${m.id}`}
                     className="flex w-[280px] shrink-0 flex-col rounded-xl bg-[#f3e8ff] p-2 shadow-sm ring-1 ring-purple-200/60"
                   >
                     <div className="mb-2 flex items-start gap-2 px-1 py-1">
@@ -1005,11 +1038,11 @@ function MinutesPreviewModal({
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--axon-ink)]">確認會議行動項目</h2>
+            <h2 className="text-lg font-semibold text-[var(--axon-ink)]">分析會議紀錄</h2>
             <p className="mt-1 text-xs text-slate-500">
               來自 {preview.sourceName}
               {preview.mock ? " · Mock 分析" : ""}
-              。建立後會在看板右側新增一個會議列表。
+              。確認行動項目後會在看板右側新增一個會議列表。
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">

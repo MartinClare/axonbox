@@ -29,7 +29,7 @@ export function listConnectorStatus() {
     // insertion hint for ops UI
     envHint:
       channel === "WHATSAPP"
-        ? "WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID"
+        ? "YCLOUD_API_KEY + YCLOUD_WEBHOOK_SECRET"
         : channel === "EMAIL"
           ? "INBOUND_EMAIL_ADDRESS + webhook/IMAP"
           : "WECHAT_APP_ID + WECHAT_APP_SECRET",

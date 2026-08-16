@@ -519,26 +519,59 @@ export async function chatText(
 }
 
 export async function transcribeAudio(buffer: Buffer, filename: string) {
-  // OpenRouter VL path is primary; audio stays mock-friendly unless native Whisper is configured
-  if (!process.env.OPENAI_API_KEY?.trim() || process.env.OPENROUTER_API_KEY) {
+  const apiKey = process.env.CANTONESE_AI_API_KEY?.trim();
+  if (!apiKey) {
     return {
-      text: `（語音轉寫提示）${filename}：請改用文字說明，或設定原生 Whisper 相容接口。`,
+      text: `（語音轉寫提示）${filename}：請設定 CANTONESE_AI_API_KEY，或改用文字說明。`,
       mock: true,
     };
   }
+
   try {
-    const client = getAIClient();
+    const form = new FormData();
+    form.set("api_key", apiKey);
+    form.set("wait_for_completion", "true");
+    form.set("skip_fusion", "false");
+    form.set("context", "香港地盤安全、質量、進度、圍欄、鋼筋、混凝土、分判商");
     const bytes = new Uint8Array(buffer);
-    const file = new File([bytes], filename, { type: "audio/webm" });
-    const result = await client.audio.transcriptions.create({
-      file,
-      model: "whisper-1",
+    const mime = filename.match(/\.ogg$/i)
+      ? "audio/ogg"
+      : filename.match(/\.mp3$/i)
+        ? "audio/mpeg"
+        : filename.match(/\.m4a$/i)
+          ? "audio/mp4"
+          : filename.match(/\.wav$/i)
+            ? "audio/wav"
+            : "audio/ogg";
+    form.set("data", new File([bytes], filename || "voice.ogg", { type: mime }));
+
+    const res = await fetch("https://cantonese.ai/api/stt", {
+      method: "POST",
+      body: form,
     });
-    return { text: result.text, mock: false };
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error("[cantonese.ai] STT failed", res.status, errText.slice(0, 200));
+      return {
+        text: `（語音轉寫失敗）${filename}`,
+        mock: true,
+      };
+    }
+    const data = (await res.json()) as {
+      text?: string;
+      transcription?: string;
+      fused_transcription?: string;
+    };
+    const text =
+      data.fused_transcription || data.transcription || data.text || "";
+    if (!text.trim()) {
+      return { text: `（語音轉寫空白）${filename}`, mock: true };
+    }
+    return { text: text.trim(), mock: false };
   } catch (err) {
-    console.error("Whisper failed", err);
+    console.error("[cantonese.ai] STT error", err);
     return {
-      text: `（语音转写失败，改用 Mock）${filename}`,
+      text: `（語音轉寫失敗）${filename}`,
       mock: true,
     };
   }

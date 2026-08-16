@@ -16,7 +16,6 @@ import {
   RefreshCw,
   Undo2,
   FileUp,
-  X,
 } from "lucide-react";
 import {
   CHANNEL_LABELS,
@@ -27,7 +26,7 @@ import {
   cn,
 } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
-import { type MinutesProgress, uploadMinutesPreview } from "@/lib/file-base64";
+import { type MinutesProgress, stashMinutesPreview, uploadMinutesPreview } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 
 type InboxRow = {
@@ -57,25 +56,6 @@ type ExtractResult = {
   mock?: boolean;
 };
 
-type PreviewAction = {
-  title: string;
-  assigneeName: string | null;
-  assigneeId: string | null;
-  dueAt: string | null;
-  notes: string | null;
-};
-
-type MinutesPreview = {
-  title: string;
-  meetingAt: string | null;
-  sourceName: string;
-  rawText: string;
-  actions: PreviewAction[];
-  mock?: boolean;
-};
-
-type UserOpt = { id: string; name: string };
-
 const channelIcon = {
   EMAIL: Mail,
   WHATSAPP: MessageCircle,
@@ -95,9 +75,6 @@ export default function InboxPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [showImport, setShowImport] = useState(false);
-  const [minutesPreview, setMinutesPreview] = useState<MinutesPreview | null>(null);
-  const [minutesUsers, setMinutesUsers] = useState<UserOpt[]>([]);
-  const [confirmingMinutes, setConfirmingMinutes] = useState(false);
   const [minutesProgress, setMinutesProgress] = useState<MinutesProgress | null>(null);
   const [inbound, setInbound] = useState<{
     address: string | null;
@@ -106,6 +83,8 @@ export default function InboxPage() {
     webhookConfigured: boolean;
     imapConfigured: boolean;
     resendConfigured?: boolean;
+    whatsappConfigured?: boolean;
+    whatsappNumber?: string | null;
   } | null>(null);
 
   const [channel, setChannel] = useState<"EMAIL" | "WHATSAPP" | "MANUAL">("EMAIL");
@@ -125,6 +104,8 @@ export default function InboxPage() {
         webhookConfigured: boolean;
         imapConfigured: boolean;
         resendConfigured?: boolean;
+        whatsappConfigured?: boolean;
+        whatsappNumber?: string | null;
       };
     }>(`/api/inbox${q}`);
     if (!res.ok) {
@@ -341,6 +322,12 @@ export default function InboxPage() {
     flash("已複製，請貼到郵件 To");
   }
 
+  async function copyWhatsAppNumber() {
+    if (!inbound?.whatsappNumber) return;
+    await navigator.clipboard.writeText(inbound.whatsappNumber);
+    flash("已複製 WhatsApp 號碼");
+  }
+
   async function syncMail() {
     setBusy(true);
     const res = await fetch("/api/connectors/email/sync", { method: "POST" });
@@ -360,14 +347,10 @@ export default function InboxPage() {
     setBusy(true);
     setMinutesProgress({ pct: 4, label: "開始處理…" });
     try {
-      const [data, settingsRes] = await Promise.all([
-        uploadMinutesPreview(file, setMinutesProgress),
-        apiFetch<{ users?: UserOpt[] }>("/api/settings"),
-      ]);
-      setMinutesProgress({ pct: 100, label: "完成" });
+      const data = await uploadMinutesPreview(file, setMinutesProgress);
+      setMinutesProgress({ pct: 100, label: "完成，前往分析…" });
       await new Promise((r) => setTimeout(r, 280));
-      if (settingsRes.ok) setMinutesUsers(settingsRes.data?.users || []);
-      setMinutesPreview({
+      stashMinutesPreview({
         title: data.title,
         meetingAt: data.meetingAt,
         sourceName: data.sourceName,
@@ -375,37 +358,13 @@ export default function InboxPage() {
         actions: data.actions || [],
         mock: data.mock,
       });
+      router.push("/tasks?minutesPreview=1");
     } catch (err) {
       flash(err instanceof Error ? err.message : "會議紀錄上傳失敗");
     } finally {
       setBusy(false);
       setMinutesProgress(null);
     }
-  }
-
-  async function confirmMinutes() {
-    if (!minutesPreview || minutesPreview.actions.length === 0) return;
-    setConfirmingMinutes(true);
-    const res = await apiFetch("/api/meetings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        confirm: true,
-        title: minutesPreview.title,
-        meetingAt: minutesPreview.meetingAt,
-        sourceName: minutesPreview.sourceName,
-        rawText: minutesPreview.rawText,
-        actions: minutesPreview.actions,
-      }),
-    });
-    setConfirmingMinutes(false);
-    if (!res.ok) {
-      flash(res.error || "建立會議列表失敗");
-      return;
-    }
-    setMinutesPreview(null);
-    flash("已建立會議任務列表");
-    router.push("/tasks");
   }
 
   const filters = [
@@ -421,7 +380,7 @@ export default function InboxPage() {
         <div>
           <h1 className="axon-title text-2xl font-semibold">訊息收件</h1>
           <p className="mt-1 text-sm axon-muted">
-            轉寄郵件到專用信箱 → AI 建議個案 → 核准後建立任務
+            轉寄郵件或 WhatsApp 到專用入口 → AI 建議個案 → 核准後建立任務
           </p>
         </div>
         {msg && (
@@ -458,6 +417,32 @@ export default function InboxPage() {
           <p className="text-sm text-amber-700">尚未設定轉寄信箱。請到人員名冊確認你的專屬代號。</p>
         )}
       </section>
+
+      {inbound?.whatsappConfigured && (
+        <section className="axon-panel space-y-3 p-5">
+          <div>
+            <div className="text-sm font-semibold text-[var(--axon-ink)]">場務 WhatsApp 收件</div>
+            <p className="mt-1 text-xs text-slate-500">
+              把對話、照片、PDF 或語音轉發到這個號碼。連續傳送會合成一則；傳「以下是另一個案」可立刻開新事件。
+            </p>
+          </div>
+          {inbound.whatsappNumber ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--axon-ink)]">
+                {inbound.whatsappNumber}
+              </code>
+              <button type="button" onClick={copyWhatsAppNumber} className="axon-btn axon-btn-ghost">
+                <Copy size={14} />
+                複製
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-amber-700">
+              已接上 YCloud，請在環境變數設定 WHATSAPP_DISPLAY_NUMBER 以便顯示號碼。
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {filters.map(([label, n, key]) => (
@@ -523,7 +508,7 @@ export default function InboxPage() {
                     disabled={busy}
                     onClick={() => minutesFileRef.current?.click()}
                     className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-purple-800 transition hover:bg-white"
-                    title="上傳會議紀錄，行動項目會放到任務看板的獨立列表"
+                    title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
                   >
                     <FileUp size={14} />
                     {busy && minutesProgress ? "處理中…" : "會議紀錄"}
@@ -786,151 +771,6 @@ export default function InboxPage() {
       </div>
 
       {minutesProgress && <MinutesProgressOverlay progress={minutesProgress} />}
-
-      {minutesPreview && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-10">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-[var(--axon-ink)]">確認會議行動項目</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  來自 {minutesPreview.sourceName}
-                  {minutesPreview.mock ? " · Mock 分析" : ""}
-                  。確認後會在任務看板右側新增獨立列表。
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMinutesPreview(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="mb-4 grid gap-2 sm:grid-cols-2">
-              <label className="text-xs text-slate-500">
-                列表名稱
-                <input
-                  className="axon-input mt-1 min-h-0 py-2 text-sm"
-                  value={minutesPreview.title}
-                  onChange={(e) =>
-                    setMinutesPreview({ ...minutesPreview, title: e.target.value })
-                  }
-                />
-              </label>
-              <label className="text-xs text-slate-500">
-                會議日期
-                <input
-                  type="date"
-                  className="axon-input mt-1 min-h-0 py-2 text-sm"
-                  value={minutesPreview.meetingAt || ""}
-                  onChange={(e) =>
-                    setMinutesPreview({
-                      ...minutesPreview,
-                      meetingAt: e.target.value || null,
-                    })
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="space-y-2">
-              {minutesPreview.actions.map((a, idx) => (
-                <div
-                  key={idx}
-                  className="grid gap-2 rounded-xl border border-[var(--axon-line)] bg-slate-50/80 p-3 sm:grid-cols-[1fr_140px_120px_auto]"
-                >
-                  <input
-                    className="axon-input min-h-0 py-2 text-sm"
-                    value={a.title}
-                    onChange={(e) => {
-                      const actions = minutesPreview.actions.map((row, i) =>
-                        i === idx ? { ...row, title: e.target.value } : row,
-                      );
-                      setMinutesPreview({ ...minutesPreview, actions });
-                    }}
-                    placeholder="行動項目"
-                  />
-                  <select
-                    className="axon-input min-h-0 py-2 text-xs"
-                    value={a.assigneeId || ""}
-                    onChange={(e) => {
-                      const actions = minutesPreview.actions.map((row, i) =>
-                        i === idx
-                          ? {
-                              ...row,
-                              assigneeId: e.target.value || null,
-                              assigneeName:
-                                minutesUsers.find((u) => u.id === e.target.value)?.name ||
-                                row.assigneeName,
-                            }
-                          : row,
-                      );
-                      setMinutesPreview({ ...minutesPreview, actions });
-                    }}
-                  >
-                    <option value="">
-                      {a.assigneeName ? `未對應：${a.assigneeName}` : "未指派"}
-                    </option>
-                    {minutesUsers.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="date"
-                    className="axon-input min-h-0 py-2 text-xs"
-                    value={a.dueAt || ""}
-                    onChange={(e) => {
-                      const actions = minutesPreview.actions.map((row, i) =>
-                        i === idx ? { ...row, dueAt: e.target.value || null } : row,
-                      );
-                      setMinutesPreview({ ...minutesPreview, actions });
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="rounded-lg px-2 text-rose-600 hover:bg-rose-50"
-                    onClick={() =>
-                      setMinutesPreview({
-                        ...minutesPreview,
-                        actions: minutesPreview.actions.filter((_, i) => i !== idx),
-                      })
-                    }
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-              {minutesPreview.actions.length === 0 && (
-                <p className="py-6 text-center text-sm text-slate-400">沒有行動項目</p>
-              )}
-            </div>
-
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setMinutesPreview(null)}
-                className="axon-btn axon-btn-ghost min-h-9 px-4 text-sm"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={confirmingMinutes || minutesPreview.actions.length === 0}
-                onClick={confirmMinutes}
-                className="axon-btn axon-btn-primary min-h-9 px-4 text-sm"
-              >
-                {confirmingMinutes
-                  ? "建立中…"
-                  : `建立列表（${minutesPreview.actions.length}）`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,79 +1,61 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { persistNormalizedMessages } from "@/lib/inbox";
-import type { NormalizedInboxMessage } from "@/lib/connectors";
+import { ingestAndPropose } from "@/lib/inbox";
+import {
+  parseYCloudInboundEvent,
+  verifyYCloudSignature,
+} from "@/lib/connectors/whatsapp";
+
+export const maxDuration = 120;
 
 /**
- * WhatsApp Business Cloud API webhook
- * INSERT: verify token + decrypt/parse WhatsApp payload
+ * YCloud WhatsApp webhook (coexist / Cloud API).
  *
- * Meta setup:
- *   Callback URL: https://your-host/api/connectors/whatsapp/webhook
- *   Verify token: WHATSAPP_VERIFY_TOKEN
- *   Env: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID
+ * YCloud Console → Developers → Webhooks:
+ *   URL: https://your-host/api/connectors/whatsapp/webhook
+ *   Events: whatsapp.inbound_message.received
+ *           (+ coexist: whatsapp.smb.message.echoes, history, app.state.sync — ACK only)
+ *   Env: YCLOUD_API_KEY, YCLOUD_WEBHOOK_SECRET, WHATSAPP_DISPLAY_NUMBER
  */
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const mode = url.searchParams.get("hub.mode");
-  const token = url.searchParams.get("hub.verify_token");
-  const challenge = url.searchParams.get("hub.challenge");
-
-  if (mode === "subscribe" && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    return new NextResponse(challenge || "", { status: 200 });
-  }
-  return NextResponse.json({ ok: true, connector: "whatsapp", mode: "stub" });
+export async function GET() {
+  return NextResponse.json({ ok: true, provider: "ycloud", connector: "whatsapp" });
 }
 
 export async function POST(req: Request) {
+  const rawBody = await req.text();
+  const signature = req.headers.get("YCloud-Signature") || req.headers.get("ycloud-signature");
+
+  if (!verifyYCloudSignature(rawBody, signature)) {
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
+  }
+
+  let payload: unknown = {};
+  try {
+    payload = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+
+  const { ackOnly, message } = await parseYCloudInboundEvent(payload);
+  if (ackOnly || !message) {
+    return NextResponse.json({ ok: true, ingested: 0, ack: true });
+  }
+
   const project = await prisma.project.findFirst();
   if (!project) return NextResponse.json({ error: "No project" }, { status: 400 });
 
-  const payload = await req.json().catch(() => ({}));
-
-  // INSERT: map WhatsApp webhook entry[].changes[].value.messages[] → NormalizedInboxMessage
-  const messages: NormalizedInboxMessage[] = [];
-
   try {
-    const entries = payload?.entry || [];
-    for (const entry of entries) {
-      for (const change of entry.changes || []) {
-        for (const msg of change.value?.messages || []) {
-          messages.push({
-            channel: "WHATSAPP",
-            externalId: msg.id,
-            sender: msg.from || change.value?.contacts?.[0]?.profile?.name || "WhatsApp",
-            body: msg.text?.body || msg.caption || "[媒体消息]",
-            receivedAt: msg.timestamp
-              ? new Date(Number(msg.timestamp) * 1000)
-              : new Date(),
-            rawPayload: msg,
-          });
-        }
-      }
-    }
-  } catch {
-    // fall through
-  }
-
-  // Demo fallback: allow { text, sender } for manual webhook tests
-  if (!messages.length && (payload.text || payload.body)) {
-    messages.push({
-      channel: "WHATSAPP",
-      sender: payload.sender || "WhatsApp",
-      body: payload.text || payload.body,
-      receivedAt: new Date(),
-      rawPayload: payload,
-    });
-  }
-
-  if (!messages.length) {
+    const proposed = await ingestAndPropose(project.id, [message]);
+    const first = proposed[0];
     return NextResponse.json({
       ok: true,
-      ingested: 0,
-      hint: "INSERT real WhatsApp parser; or POST { text, sender } for demo",
+      ingested: proposed.length,
+      ids: proposed.map((p) => p.message?.id).filter(Boolean),
+      extract: first?.extract || null,
     });
+  } catch (err) {
+    console.error("[whatsapp.webhook] ingest failed", err);
+    // Still 200 so YCloud does not retry forever on LLM failures after persist
+    return NextResponse.json({ ok: true, ingested: 0, error: "ingest_failed" });
   }
-
-  const created = await persistNormalizedMessages(project.id, messages);
-  return NextResponse.json({ ok: true, ingested: created.length, ids: created.map((c) => c.id) });
 }

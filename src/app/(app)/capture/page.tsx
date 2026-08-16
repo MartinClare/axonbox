@@ -265,7 +265,9 @@ export default function CapturePage() {
             <p className="axon-muted mt-0.5 text-xs">
               {mode === "photo"
                 ? "支援直接拍攝或從相簿選取 · 記錄現況／發現問題"
-                : "可加說明位置、工序或風險點"}
+                : mode === "chat"
+                  ? "可貼上聊天紀錄；正式收件請轉發到場務 WhatsApp 號碼"
+                  : "可加說明位置、工序或風險點"}
             </p>
           </div>
 
