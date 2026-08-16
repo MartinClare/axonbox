@@ -1,5 +1,23 @@
 /** Minimal Markdown → HTML for the in-app Help page (no extra deps). */
 
+export type HelpSection = {
+  slug: string;
+  title: string;
+};
+
+export type HelpChapter = {
+  slug: string;
+  title: string;
+  markdown: string;
+  subsections: HelpSection[];
+};
+
+export type HelpManual = {
+  title: string;
+  intro: string;
+  chapters: HelpChapter[];
+};
+
 function escapeHtml(s: string) {
   return s
     .replaceAll("&", "&amp;")
@@ -10,11 +28,68 @@ function escapeHtml(s: string) {
 
 function inline(s: string) {
   let t = escapeHtml(s);
-  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a class="text-[var(--axon-blue)] underline" href="$2">$1</a>');
+  t = t.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    '<a class="text-[var(--axon-blue)] underline underline-offset-2 hover:text-[var(--axon-navy)]" href="$2">$1</a>',
+  );
   t = t.replace(/`([^`]+)`/g, '<code class="rounded bg-slate-100 px-1 text-[13px]">$1</code>');
   t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   t = t.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return t;
+}
+
+export function slugify(title: string) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export function parseHelpManual(md: string): HelpManual {
+  const lines = md.replaceAll("\r\n", "\n").split("\n");
+  let title = "Help";
+  const introLines: string[] = [];
+  const chapters: HelpChapter[] = [];
+  let current: { title: string; lines: string[] } | null = null;
+
+  const flush = () => {
+    if (!current) return;
+    const subsections: HelpSection[] = [];
+    for (const line of current.lines) {
+      if (line.startsWith("### ")) {
+        const heading = line.slice(4).trim();
+        subsections.push({ slug: slugify(heading), title: heading });
+      }
+    }
+    chapters.push({
+      slug: slugify(current.title),
+      title: current.title,
+      markdown: current.lines.join("\n").replace(/^\n+|\n+$/g, ""),
+      subsections,
+    });
+    current = null;
+  };
+
+  for (const line of lines) {
+    if (line.startsWith("# ") && !line.startsWith("## ")) {
+      title = line.slice(2).trim();
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      flush();
+      current = { title: line.slice(3).trim(), lines: [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+    else introLines.push(line);
+  }
+  flush();
+
+  return {
+    title,
+    intro: introLines.join("\n").replace(/^\n+|\n+$/g, "").replace(/(^|\n)---\s*$/g, "").trim(),
+    chapters,
+  };
 }
 
 export function markdownToHtml(md: string): string {
@@ -62,9 +137,10 @@ export function markdownToHtml(md: string): string {
     if (img) {
       const alt = escapeHtml(img[1]);
       const src = escapeHtml(img[2]);
+      const isPpt = src.includes("ppt-");
       out.push(
-        `<figure class="my-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-          <img src="${src}" alt="${alt}" class="w-full max-w-3xl bg-white" />
+        `<figure class="my-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <img src="${src}" alt="${alt}" class="${isPpt ? "mx-auto w-full max-w-3xl object-contain bg-slate-900" : "mx-auto max-h-[min(36rem,72vh)] w-auto max-w-full object-contain object-top bg-white"}" />
           <figcaption class="px-3 py-2 text-xs text-slate-500">${alt}</figcaption>
         </figure>`,
       );
@@ -73,22 +149,26 @@ export function markdownToHtml(md: string): string {
     }
 
     if (line.startsWith("### ")) {
-      const title = line.slice(4).trim();
-      const id = slug(title);
-      out.push(`<h3 id="${id}" class="mb-2 mt-8 text-base font-semibold text-[var(--axon-navy)]">${inline(title)}</h3>`);
+      const heading = line.slice(4).trim();
+      const id = slugify(heading);
+      out.push(
+        `<h3 id="${id}" class="mb-2 mt-8 scroll-mt-24 text-base font-semibold text-[var(--axon-navy)]">${inline(heading)}</h3>`,
+      );
       i += 1;
       continue;
     }
     if (line.startsWith("## ")) {
-      const title = line.slice(3).trim();
-      const id = slug(title);
-      out.push(`<h2 id="${id}" class="mb-3 mt-10 border-b border-slate-200 pb-2 text-xl font-semibold text-[var(--axon-navy)]">${inline(title)}</h2>`);
+      const heading = line.slice(3).trim();
+      const id = slugify(heading);
+      out.push(
+        `<h2 id="${id}" class="mb-3 mt-10 scroll-mt-24 border-b border-slate-200 pb-2 text-xl font-semibold text-[var(--axon-navy)]">${inline(heading)}</h2>`,
+      );
       i += 1;
       continue;
     }
     if (line.startsWith("# ")) {
-      const title = line.slice(2).trim();
-      out.push(`<h1 class="mb-4 text-2xl font-semibold text-[var(--axon-navy)]">${inline(title)}</h1>`);
+      const heading = line.slice(2).trim();
+      out.push(`<h1 class="mb-4 text-2xl font-semibold text-[var(--axon-navy)]">${inline(heading)}</h1>`);
       i += 1;
       continue;
     }
@@ -152,13 +232,6 @@ export function markdownToHtml(md: string): string {
   }
 
   return out.join("\n");
-}
-
-function slug(title: string) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 function tableHtml(rows: string[]) {

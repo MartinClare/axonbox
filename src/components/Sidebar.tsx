@@ -187,7 +187,10 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-[var(--axon-ink)] text-white md:flex">
+      <aside
+        data-help="sidebar"
+        className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-[var(--axon-ink)] text-white md:flex"
+      >
         <div className="border-b border-white/10 px-5 py-6">
           <BrandMark />
         </div>

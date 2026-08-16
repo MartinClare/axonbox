@@ -578,7 +578,7 @@ End of day: **Daily reports** copy or PDF. End of week: **Overview** digest and 
 
 ### 19.3 Pitch phrase to app screen
 
-See [2.5](#25-pitch-idea-vs-actual-screen).
+See [2.5 Pitch idea vs actual screen](/help/2-what-the-app-is-for#2-5-pitch-idea-vs-actual-screen).
 
 ### 19.4 Screenshot index
 

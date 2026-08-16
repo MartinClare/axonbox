@@ -86,6 +86,7 @@ export function AskDock() {
       {!open && (
         <button
           type="button"
+          data-help-hide="ask"
           onClick={() => setOpen(true)}
           className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-2 rounded-full bg-[var(--axon-ink)] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(0,48,73,0.28)] ring-2 ring-[var(--axon-signal)] transition hover:bg-[#02445f] md:bottom-6 md:right-6"
           aria-label={t("ask.fabAria")}
