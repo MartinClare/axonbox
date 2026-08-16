@@ -19,6 +19,11 @@ export function isMinutesFile(file: { mime?: string; name?: string }) {
 
 function cleanMinutesText(text: string) {
   return text
+    // Drop common drawing/figure caption lines — keep prose only
+    .replace(
+      /^(?:\s*(?:圖|圖號|附图|附圖|Appendix\s*Drawing|Drawing\s*No\.?|Fig\.?|Figure|Sketch|DWG)[^\n]*)/gim,
+      "",
+    )
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
@@ -40,7 +45,7 @@ async function textFromDocx(buf: Buffer) {
     .replace(/&quot;/g, '"');
 }
 
-/** Full-document text for meeting minutes (higher limit than email excerpts). */
+/** Full-document text only (no images/drawings). PDF via unpdf text layer; DOCX via document.xml. */
 export async function extractMinutesText(
   buf: Buffer,
   file: { mime?: string; name?: string },
@@ -48,10 +53,12 @@ export async function extractMinutesText(
   const ext = extOf(file.name || "");
   const mime = (file.mime || "").toLowerCase();
   try {
+    // Text layer only — ignore embedded drawings/images
     if (mime.includes("pdf") || ext === "pdf") {
       const { text } = await extractText(new Uint8Array(buf), { mergePages: true });
       return cleanMinutesText(Array.isArray(text) ? text.join("\n") : text || "");
     }
+    // word/document.xml text only — do not read word/media/*
     if (mime.includes("word") || ext === "docx") {
       return cleanMinutesText(await textFromDocx(buf));
     }

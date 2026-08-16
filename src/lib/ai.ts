@@ -336,11 +336,11 @@ export async function extractMeetingActions(text: string): Promise<MeetingExtrac
         {
           role: "system",
           content:
-            "你是香港工程項目會議紀錄助理。只回傳純 JSON，繁體中文。只抽出明確的行動項目（誰做什麼、何時），不要把討論紀錄整段變成任務。",
+            "你是香港工程項目會議紀錄助理。只回傳純 JSON，繁體中文。只根據文字抽出明確的行動項目（誰做什麼、何時）。完全忽略圖則、草圖、附圖、Drawing／Figure／Sketch 及任何圖像內容；不要為「見圖」「如圖所示」另開任務。",
         },
         {
           role: "user",
-          content: `請從以下會議紀錄抽出行動項目。只回傳 JSON：
+          content: `請從以下會議紀錄的文字抽出行動項目。只回傳 JSON：
 {
   "title": "會議短標題",
   "meetingAt": "YYYY-MM-DD 或 null",
@@ -354,12 +354,14 @@ export async function extractMeetingActions(text: string): Promise<MeetingExtrac
   ]
 }
 規則：
+- 只分析文字；忽略圖則、繪圖、附圖、圖號、Drawing／DWG／Figure
 - 只抽有跟進責任的事項；略過純資訊／已完成事項
+- 不要把「見附圖／見圖則／如圖」當成獨立任務
 - assigneeName 用紀錄裡出現的人名；沒有就 null
 - dueAt 僅在有明確日期時填寫
 - 最多 30 項
 
-會議紀錄：
+會議紀錄文字：
 ${body.slice(0, 18000)}`,
         },
       ],
