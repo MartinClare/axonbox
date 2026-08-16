@@ -73,6 +73,32 @@ export default function CaseDetailPage() {
   const [msg, setMsg] = useState("");
   const [waiveOpen, setWaiveOpen] = useState(false);
   const [waiveNote, setWaiveNote] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [edit, setEdit] = useState({
+    title: "",
+    description: "",
+    category: "OTHER",
+    severity: "MEDIUM",
+    location: "",
+    recommendation: "",
+    dueAt: "",
+    assigneeId: "",
+    subcontractorId: "",
+  });
+
+  function syncEditFromCase(c: CaseDetail) {
+    setEdit({
+      title: c.title || "",
+      description: c.description || "",
+      category: c.category || "OTHER",
+      severity: c.severity || "MEDIUM",
+      location: c.location || "",
+      recommendation: c.recommendation || "",
+      dueAt: c.dueAt ? c.dueAt.slice(0, 10) : "",
+      assigneeId: c.assigneeId || c.assignee?.id || "",
+      subcontractorId: c.subcontractorId || c.subcontractor?.id || "",
+    });
+  }
 
   async function load() {
     const [cRes, sRes] = await Promise.all([
@@ -88,6 +114,7 @@ export default function CaseDetailPage() {
     }
     const c = cRes.data;
     setItem(c);
+    syncEditFromCase(c);
     setSubs(sRes.ok ? asArray(sRes.data?.subcontractors) : []);
     setUsers(sRes.ok ? asArray(sRes.data?.users) : []);
     setAssign((a) => ({
@@ -225,6 +252,44 @@ export default function CaseDetailPage() {
     router.refresh();
   }
 
+  async function saveEdit() {
+    const title = edit.title.trim();
+    if (!title) {
+      setMsg("請填寫標題");
+      return;
+    }
+    const ok = await patch({
+      title,
+      description: edit.description.trim(),
+      category: edit.category,
+      severity: edit.severity,
+      location: edit.location.trim() || "待確認",
+      recommendation: edit.recommendation.trim() || null,
+      dueAt: edit.dueAt || null,
+      assigneeId: edit.assigneeId || null,
+      subcontractorId: edit.subcontractorId || null,
+      eventType: "EDIT",
+      eventNote: "更新事件資料",
+    });
+    if (ok) {
+      setEditing(false);
+      setAssign((a) => ({
+        ...a,
+        assigneeId: edit.assigneeId,
+        subcontractorId: edit.subcontractorId,
+        dueAt: edit.dueAt,
+        instructions: edit.recommendation || a.instructions,
+      }));
+      setMsg("已儲存修改");
+    }
+  }
+
+  function cancelEdit() {
+    if (item) syncEditFromCase(item);
+    setEditing(false);
+    setMsg("");
+  }
+
   if (!item) {
     return (
       <div className="space-y-3 py-10 text-center">
@@ -253,7 +318,16 @@ export default function CaseDetailPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xs text-slate-400">{item.caseNo}</div>
-          <h1 className="text-2xl font-semibold text-[var(--axon-navy)]">{item.title}</h1>
+          {editing ? (
+            <input
+              className="mt-1 w-full max-w-2xl rounded-lg border border-slate-200 px-3 py-2 text-xl font-semibold text-[var(--axon-navy)]"
+              value={edit.title}
+              onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+              placeholder="事件標題"
+            />
+          ) : (
+            <h1 className="text-2xl font-semibold text-[var(--axon-navy)]">{item.title}</h1>
+          )}
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <span className={cn("rounded px-2 py-0.5", CATEGORY_COLORS[item.category])}>
               {CATEGORY_LABELS[item.category]}
@@ -287,6 +361,39 @@ export default function CaseDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {!editing ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                syncEditFromCase(item);
+                setEditing(true);
+                setTab("details");
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              編輯
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={saveEdit}
+                className="rounded-lg bg-[var(--axon-blue)] px-4 py-2 text-sm text-white disabled:opacity-50"
+              >
+                儲存
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={cancelEdit}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50"
+              >
+                取消
+              </button>
+            </>
+          )}
           <button
             onClick={downloadPack}
             disabled={busy}
@@ -338,34 +445,162 @@ export default function CaseDetailPage() {
       {tab === "details" && (
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
-            <h2 className="mb-3 text-sm font-semibold">事件資訊</h2>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">位置</dt>
-                <dd>{item.location}</dd>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">事件資訊</h2>
+              {editing && (
+                <span className="text-[11px] font-medium text-[var(--axon-blue)]">編輯中</span>
+              )}
+            </div>
+            {editing ? (
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="text-xs text-slate-500">
+                    分類
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={edit.category}
+                      onChange={(e) => setEdit({ ...edit, category: e.target.value })}
+                    >
+                      {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    嚴重度
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={edit.severity}
+                      onChange={(e) => setEdit({ ...edit, severity: e.target.value })}
+                    >
+                      {Object.entries(SEVERITY_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="block text-xs text-slate-500">
+                  位置
+                  <input
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={edit.location}
+                    onChange={(e) => setEdit({ ...edit, location: e.target.value })}
+                  />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="text-xs text-slate-500">
+                    負責人
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={edit.assigneeId}
+                      onChange={(e) => setEdit({ ...edit, assigneeId: e.target.value })}
+                    >
+                      <option value="">未指派</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    分判
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                      value={edit.subcontractorId}
+                      onChange={(e) => setEdit({ ...edit, subcontractorId: e.target.value })}
+                    >
+                      <option value="">未指定</option>
+                      {subs.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="block text-xs text-slate-500">
+                  期限
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={edit.dueAt}
+                    onChange={(e) => setEdit({ ...edit, dueAt: e.target.value })}
+                  />
+                </label>
+                <label className="block text-xs text-slate-500">
+                  說明
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    rows={4}
+                    value={edit.description}
+                    onChange={(e) => setEdit({ ...edit, description: e.target.value })}
+                  />
+                </label>
+                <label className="block text-xs text-slate-500">
+                  建議／整改指示
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    rows={3}
+                    value={edit.recommendation}
+                    onChange={(e) => setEdit({ ...edit, recommendation: e.target.value })}
+                  />
+                </label>
+                <p className="text-xs text-slate-400">發現時間：{formatDate(item.discoveredAt)}（不可改）</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={saveEdit}
+                    className="rounded-lg bg-[var(--axon-blue)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                  >
+                    儲存修改
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={cancelEdit}
+                    className="rounded-lg border px-4 py-2 text-sm"
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">發現時間</dt>
-                <dd>{formatDate(item.discoveredAt)}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">負責人</dt>
-                <dd>{item.assignee?.name || "—"}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">分判</dt>
-                <dd>{item.subcontractor?.name || "—"}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-slate-500">項目</dt>
-                <dd>{item.project.name}</dd>
-              </div>
-            </dl>
-            <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
-            {item.recommendation && (
-              <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
-                建議：{item.recommendation}
-              </p>
+            ) : (
+              <>
+                <dl className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">位置</dt>
+                    <dd>{item.location}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">發現時間</dt>
+                    <dd>{formatDate(item.discoveredAt)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">負責人</dt>
+                    <dd>{item.assignee?.name || "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">分判</dt>
+                    <dd>{item.subcontractor?.name || "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">項目</dt>
+                    <dd>{item.project.name}</dd>
+                  </div>
+                </dl>
+                <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
+                {item.recommendation && (
+                  <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+                    建議：{item.recommendation}
+                  </p>
+                )}
+              </>
             )}
           </section>
 
