@@ -13,7 +13,7 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import { CATEGORY_LABELS } from "@/lib/labels";
+import { useI18n } from "@/components/I18nProvider";
 
 const COLORS = ["#D62828", "#F77F00", "#003049", "#FECE32", "#2a5a72"];
 
@@ -22,8 +22,9 @@ export function CategoryDonut({
 }: {
   data: { category: string; count: number }[];
 }) {
+  const { t, categoryLabels } = useI18n();
   const chart = data.map((d) => ({
-    name: CATEGORY_LABELS[d.category] || d.category,
+    name: categoryLabels[d.category] || d.category,
     value: d.count,
   }));
   const total = chart.reduce((s, d) => s + d.value, 0);
@@ -50,7 +51,7 @@ export function CategoryDonut({
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="text-center">
           <div className="text-2xl font-semibold text-[var(--axon-navy)]">{total}</div>
-          <div className="text-xs text-slate-400">{"\u4e8b\u4ef6"}</div>
+          <div className="text-xs text-slate-400">{t("home.chart.cases")}</div>
         </div>
       </div>
     </div>
@@ -62,6 +63,7 @@ export function TrendLine({
 }: {
   data: { date: string; created: number; closed: number }[];
 }) {
+  const { t } = useI18n();
   return (
     <div className="h-64">
       <ResponsiveContainer width="100%" height="100%">
@@ -71,8 +73,20 @@ export function TrendLine({
           <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#2a5a72" }} />
           <Tooltip />
           <Legend />
-          <Line type="monotone" dataKey="created" name="新增" stroke="#F77F00" strokeWidth={2} />
-          <Line type="monotone" dataKey="closed" name="完成" stroke="#003049" strokeWidth={2} />
+          <Line
+            type="monotone"
+            dataKey="created"
+            name={t("home.chart.created")}
+            stroke="#F77F00"
+            strokeWidth={2}
+          />
+          <Line
+            type="monotone"
+            dataKey="closed"
+            name={t("home.chart.closed")}
+            stroke="#003049"
+            strokeWidth={2}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>

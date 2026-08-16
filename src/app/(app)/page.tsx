@@ -38,6 +38,7 @@ export default async function OverviewPage() {
       "PENDING_REVIEW",
       "CLOSED",
     ]);
+    const dateLocale = locale === "en" ? "en-HK" : "zh-HK";
 
     const now = new Date();
     const weekAgo = new Date(now);
@@ -168,26 +169,38 @@ export default async function OverviewPage() {
     }
 
     const digestLines = [
-      `【AxonBox 週報摘要】${project?.name || "項目"} · ${now.toLocaleDateString("zh-HK")}`,
-      `未關安全 ${safetyOpen} · 未關品質 ${qualityOpen} · 逾期事件 ${overdueCases}`,
-      `會議行動逾期 ${agingMinutes} · 進行中點檢 ${pendingInspect}`,
+      t("home.digest.title", {
+        project: project?.name || t("home.digest.projectFallback"),
+        date: now.toLocaleDateString(dateLocale),
+      }),
+      t("home.digest.line1", {
+        safety: safetyOpen,
+        quality: qualityOpen,
+        overdue: overdueCases,
+      }),
+      t("home.digest.line2", {
+        aging: agingMinutes,
+        inspect: pendingInspect,
+      }),
       "",
       overdueList.length
-        ? "逾期事件：\n" +
+        ? t("home.digest.overdueHeader") +
+          "\n" +
           overdueList
             .map(
               (c) =>
                 `• ${c.caseNo} ${c.title}（${CATEGORY_LABELS[c.category] || c.category}/${CASE_STATUS_LABELS[c.status] || c.status}）`,
             )
             .join("\n")
-        : "逾期事件：無",
+        : t("home.digest.overdueNone"),
       "",
       agingList.length
-        ? "逾期會議行動：\n" +
+        ? t("home.digest.agingHeader") +
+          "\n" +
           agingList
-            .map((t) => `• ${t.title}${t.meeting?.title ? `（${t.meeting.title}）` : ""}`)
+            .map((task) => `• ${task.title}${task.meeting?.title ? `（${task.meeting.title}）` : ""}`)
             .join("\n")
-        : "逾期會議行動：無",
+        : t("home.digest.agingNone"),
     ];
 
     return (
@@ -228,16 +241,32 @@ export default async function OverviewPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Link href="/cases?category=SAFETY" className="block">
-            <KpiCard label="未關安全" value={safetyOpen} hint="優先處理" />
+            <KpiCard
+              label={t("home.kpi.safetyOpen")}
+              value={safetyOpen}
+              hint={t("home.kpi.safetyHint")}
+            />
           </Link>
           <Link href="/cases?category=QUALITY" className="block">
-            <KpiCard label="未關品質" value={qualityOpen} hint="品質跟進" />
+            <KpiCard
+              label={t("home.kpi.qualityOpen")}
+              value={qualityOpen}
+              hint={t("home.kpi.qualityHint")}
+            />
           </Link>
           <Link href="/cases?overdue=1" className="block">
-            <KpiCard label="逾期事件" value={overdueCases} hint="已過期限" />
+            <KpiCard
+              label={t("home.kpi.overdueCases")}
+              value={overdueCases}
+              hint={t("home.kpi.overdueHint")}
+            />
           </Link>
           <Link href="/tasks" className="block">
-            <KpiCard label="會議行動逾期" value={agingMinutes} hint="會議列表" />
+            <KpiCard
+              label={t("home.kpi.agingMinutes")}
+              value={agingMinutes}
+              hint={t("home.kpi.agingHint")}
+            />
           </Link>
         </div>
 
@@ -246,17 +275,19 @@ export default async function OverviewPage() {
             <div>
               <div className="text-sm font-semibold text-[var(--axon-ink)]">
                 {safetyOpen > 0
-                  ? `${safetyOpen} 項安全漏洞尚未關閉`
-                  : `${pendingInspect} 項點檢進行中`}
+                  ? t("home.alert.safetyOpen", { count: safetyOpen })
+                  : t("home.alert.inspectOpen", { count: pendingInspect })}
               </div>
               <p className="axon-muted mt-0.5 text-xs">
-                {pendingInspect > 0 ? `另有 ${pendingInspect} 項現場點檢未完結` : "優先處理高風險項"}
+                {pendingInspect > 0
+                  ? t("home.alert.inspectExtra", { count: pendingInspect })
+                  : t("home.alert.priority")}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               {pendingInspect > 0 && (
                 <Link href="/checklist" className="text-sm font-semibold text-[var(--axon-blue)]">
-                  點檢 →
+                  {t("home.alert.checklistLink")}
                 </Link>
               )}
               {safetyOpen > 0 && (
@@ -264,7 +295,7 @@ export default async function OverviewPage() {
                   href="/cases?category=SAFETY"
                   className="text-sm font-semibold text-[var(--axon-danger)]"
                 >
-                  查看安全事件 →
+                  {t("home.alert.safetyLink")}
                 </Link>
               )}
             </div>
@@ -273,29 +304,35 @@ export default async function OverviewPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
-            label="進行中事件"
+            label={t("home.kpi.activeCases")}
             value={activeCases}
             delta={pctChange(activeCases, prevActive)}
-            hint="較上週"
+            hint={t("home.kpi.vsLastWeek")}
           />
           <KpiCard
-            label="待處理任務"
+            label={t("home.kpi.pendingTasks")}
             value={pendingTasks}
             delta={pctChange(pendingTasks, prevPending)}
-            hint="較上週"
+            hint={t("home.kpi.vsLastWeek")}
           />
           <KpiCard
-            label="今日新增"
+            label={t("home.kpi.todayNew")}
             value={todayNew}
             delta={pctChange(todayNew, prevTodayNew)}
-            hint="較上週同日"
+            hint={t("home.kpi.vsSameDay")}
           />
-          <KpiCard label="平均關閉" value={`${avgCloseDays}天`} hint={`${closedCases} 已完成`} />
+          <KpiCard
+            label={t("home.kpi.avgClose")}
+            value={t("home.kpi.days", { days: avgCloseDays })}
+            hint={t("home.kpi.closedCount", { count: closedCases })}
+          />
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[0.9fr_1.2fr_0.9fr]">
           <section className="axon-panel p-5">
-            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">分類分佈</h2>
+            <h2 className="text-sm font-semibold text-[var(--axon-ink)]">
+              {t("home.section.byCategory")}
+            </h2>
             <CategoryDonut
               data={byCategory.map((c) => ({
                 category: c.category,
@@ -306,17 +343,19 @@ export default async function OverviewPage() {
 
           <section className="axon-panel p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--axon-ink)]">最新事件</h2>
+              <h2 className="text-sm font-semibold text-[var(--axon-ink)]">
+                {t("home.section.latest")}
+              </h2>
               <Link href="/cases" className="text-xs text-[var(--axon-steel)]">
-                全部
+                {t("home.section.all")}
               </Link>
             </div>
             <div className="space-y-2">
               {latest.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-400">
-                  尚無事件 · 可先{" "}
+                  {t("home.empty.latest")}{" "}
                   <Link href="/capture" className="text-[var(--axon-blue)]">
-                    拍照分析
+                    {t("home.empty.capture")}
                   </Link>
                 </p>
               ) : (
@@ -326,7 +365,9 @@ export default async function OverviewPage() {
           </section>
 
           <section className="axon-panel p-5">
-            <h2 className="mb-2 text-sm font-semibold text-[var(--axon-ink)]">近 7 日趨勢</h2>
+            <h2 className="mb-2 text-sm font-semibold text-[var(--axon-ink)]">
+              {t("home.section.trend")}
+            </h2>
             <TrendLine data={trend} />
           </section>
         </div>
@@ -334,12 +375,14 @@ export default async function OverviewPage() {
     );
   } catch (err) {
     console.error("Overview failed", err);
+    const locale = await getServerUiLocale().catch(() => "zh-Hant" as const);
+    const t = (key: string) => translate(locale, key);
     return (
       <div className="axon-panel mx-auto max-w-lg space-y-3 p-8 text-center">
-        <h1 className="axon-title text-xl font-semibold">總覽暫時無法載入</h1>
-        <p className="text-sm axon-muted">資料庫可能未就緒。請重新整理，或執行 npm run db:setup。</p>
+        <h1 className="axon-title text-xl font-semibold">{t("home.error.title")}</h1>
+        <p className="text-sm axon-muted">{t("home.error.body")}</p>
         <Link href="/" className="axon-btn axon-btn-primary inline-flex">
-          重試
+          {t("home.error.retry")}
         </Link>
       </div>
     );
