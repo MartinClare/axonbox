@@ -355,30 +355,44 @@ export default function InboxPage() {
   async function onPickMinutes(file: File | null) {
     if (!file) return;
     setBusy(true);
-    const form = new FormData();
-    form.append("file", file);
-    const [uploadRes, settingsRes] = await Promise.all([
-      apiFetch<MinutesPreview>("/api/meetings", { method: "POST", body: form }),
-      apiFetch<{ users?: UserOpt[] }>("/api/settings"),
-    ]);
-    setBusy(false);
-    if (!uploadRes.ok) {
-      flash(uploadRes.error || "會議紀錄上傳失敗");
-      return;
+    try {
+      const { fileToBase64 } = await import("@/lib/file-base64");
+      const fileBase64 = await fileToBase64(file);
+      const [uploadRes, settingsRes] = await Promise.all([
+        apiFetch<MinutesPreview>("/api/meetings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preview: true,
+            fileName: file.name,
+            mime: file.type || "",
+            fileBase64,
+          }),
+        }),
+        apiFetch<{ users?: UserOpt[] }>("/api/settings"),
+      ]);
+      setBusy(false);
+      if (!uploadRes.ok) {
+        flash(uploadRes.error || "會議紀錄上傳失敗");
+        return;
+      }
+      if (!uploadRes.data) {
+        flash("會議紀錄上傳失敗");
+        return;
+      }
+      if (settingsRes.ok) setMinutesUsers(settingsRes.data?.users || []);
+      setMinutesPreview({
+        title: uploadRes.data.title,
+        meetingAt: uploadRes.data.meetingAt,
+        sourceName: uploadRes.data.sourceName,
+        rawText: uploadRes.data.rawText,
+        actions: uploadRes.data.actions || [],
+        mock: uploadRes.data.mock,
+      });
+    } catch (err) {
+      setBusy(false);
+      flash(err instanceof Error ? err.message : "會議紀錄上傳失敗");
     }
-    if (!uploadRes.data) {
-      flash("會議紀錄上傳失敗");
-      return;
-    }
-    if (settingsRes.ok) setMinutesUsers(settingsRes.data?.users || []);
-    setMinutesPreview({
-      title: uploadRes.data.title,
-      meetingAt: uploadRes.data.meetingAt,
-      sourceName: uploadRes.data.sourceName,
-      rawText: uploadRes.data.rawText,
-      actions: uploadRes.data.actions || [],
-      mock: uploadRes.data.mock,
-    });
   }
 
   async function confirmMinutes() {

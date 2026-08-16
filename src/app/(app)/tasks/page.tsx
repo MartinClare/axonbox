@@ -488,26 +488,40 @@ export default function TasksPage() {
     if (!file) return;
     setUploading(true);
     setError("");
-    const form = new FormData();
-    form.append("file", file);
-    const res = await apiFetch<MinutesPreview>("/api/meetings", { method: "POST", body: form });
-    setUploading(false);
-    if (!res.ok) {
-      setError(res.error || "上傳失敗");
-      return;
+    try {
+      const { fileToBase64 } = await import("@/lib/file-base64");
+      const fileBase64 = await fileToBase64(file);
+      const res = await apiFetch<MinutesPreview>("/api/meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preview: true,
+          fileName: file.name,
+          mime: file.type || "",
+          fileBase64,
+        }),
+      });
+      setUploading(false);
+      if (!res.ok) {
+        setError(res.error || "上傳失敗");
+        return;
+      }
+      if (!res.data) {
+        setError("上傳失敗");
+        return;
+      }
+      setPreview({
+        title: res.data.title,
+        meetingAt: res.data.meetingAt,
+        sourceName: res.data.sourceName,
+        rawText: res.data.rawText,
+        actions: res.data.actions || [],
+        mock: res.data.mock,
+      });
+    } catch (err) {
+      setUploading(false);
+      setError(err instanceof Error ? err.message : "上傳失敗");
     }
-    if (!res.data) {
-      setError("上傳失敗");
-      return;
-    }
-    setPreview({
-      title: res.data.title,
-      meetingAt: res.data.meetingAt,
-      sourceName: res.data.sourceName,
-      rawText: res.data.rawText,
-      actions: res.data.actions || [],
-      mock: res.data.mock,
-    });
   }
 
   async function confirmMinutes() {
