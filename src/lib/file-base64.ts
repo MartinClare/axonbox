@@ -8,6 +8,8 @@ function encodeFileNameHeader(name: string) {
   return btoa(binary);
 }
 
+export type MinutesOutputLang = "original" | "zh" | "en";
+
 export type MinutesPreviewPayload = {
   title: string;
   meetingAt: string | null;
@@ -21,6 +23,7 @@ export type MinutesPreviewPayload = {
     dueAt: string | null;
     notes: string | null;
   }>;
+  outputLang?: MinutesOutputLang;
   mock?: boolean;
   model?: string | null;
 };
@@ -62,6 +65,7 @@ export function takeMinutesPreview(): MinutesPreviewPayload | null {
 export function uploadMinutesPreview(
   file: File,
   onProgress: (progress: MinutesProgress) => void,
+  opts?: { outputLang?: MinutesOutputLang },
 ): Promise<MinutesPreviewPayload> {
   return new Promise((resolve, reject) => {
     if (file.size > MINUTES_UPLOAD_MAX_BYTES) {
@@ -79,15 +83,18 @@ export function uploadMinutesPreview(
       aiTimer = undefined;
     };
 
+    const outputLang: MinutesOutputLang =
+      opts?.outputLang === "zh" || opts?.outputLang === "en" ? opts.outputLang : "original";
+
     onProgress({ pct: 8, label: "準備上傳…" });
 
     const xhr = new XMLHttpRequest();
-    // New path forces clients off the old JSON /api/meetings upload
     xhr.open("POST", "/api/meetings/preview");
     xhr.withCredentials = true;
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     xhr.setRequestHeader("X-File-Name", encodeFileNameHeader(file.name));
     xhr.setRequestHeader("X-File-Mime", file.type || "application/octet-stream");
+    xhr.setRequestHeader("X-Output-Lang", outputLang);
 
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable || e.total <= 0) return;
@@ -139,4 +146,35 @@ export function uploadMinutesPreview(
 
     xhr.send(file);
   });
+}
+
+/** Re-run minutes extract on stored text (no file re-upload). */
+export async function repreviewMinutesText(opts: {
+  rawText: string;
+  fileName: string;
+  outputLang?: MinutesOutputLang;
+}): Promise<MinutesPreviewPayload> {
+  const outputLang: MinutesOutputLang =
+    opts.outputLang === "zh" || opts.outputLang === "en" ? opts.outputLang : "original";
+  const res = await fetch("/api/meetings", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      preview: true,
+      rawText: opts.rawText,
+      fileName: opts.fileName,
+      outputLang,
+    }),
+  });
+  const data = (await res.json().catch(() => null)) as
+    | (MinutesPreviewPayload & { error?: string })
+    | null;
+  if (!res.ok) {
+    throw new Error(data?.error || `錯誤 ${res.status}`);
+  }
+  return {
+    ...(data as MinutesPreviewPayload),
+    outputLang: data?.outputLang || outputLang,
+  };
 }

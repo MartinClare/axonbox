@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { extractMeetingActions } from "@/lib/ai";
+import { extractMeetingActions, normalizeMinutesOutputLang } from "@/lib/ai";
 import {
   extractMinutesText,
   isMinutesFile,
@@ -164,10 +164,11 @@ export async function POST(req: NextRequest) {
       if (body.preview === true && typeof body.rawText === "string") {
         const fileName = String(body.fileName || body.name || "minutes.txt");
         const rawText = String(body.rawText);
+        const outputLang = normalizeMinutesOutputLang(body.outputLang);
         if (!rawText.trim()) {
           return NextResponse.json({ error: "內容為空" }, { status: 400 });
         }
-        const extracted = await extractMeetingActions(rawText);
+        const extracted = await extractMeetingActions(rawText, { outputLang });
         const users = (await prisma.user.findMany({
           select: { id: true, name: true, email: true, company: true },
         })) as DirectoryUser[];
@@ -189,6 +190,7 @@ export async function POST(req: NextRequest) {
           sourceName: fileName,
           rawText: rawText.slice(0, 20_000),
           actions,
+          outputLang,
           mock: extracted.mock,
           model: extracted.model || null,
         });

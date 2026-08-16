@@ -369,7 +369,36 @@ export type MeetingExtractResult = {
   model?: string;
 };
 
-function mockMeetingExtract(text: string): MeetingExtractResult {
+export type MinutesOutputLang = "original" | "zh" | "en";
+
+export function normalizeMinutesOutputLang(v: unknown): MinutesOutputLang {
+  const s = String(v || "").trim().toLowerCase();
+  if (s === "zh" || s === "zh-hant" || s === "zh-tw" || s === "chinese" || s === "中文") {
+    return "zh";
+  }
+  if (s === "en" || s === "english" || s === "eng") return "en";
+  return "original";
+}
+
+function meetingLangRule(lang: MinutesOutputLang) {
+  if (lang === "zh") {
+    return "Output language: Traditional Chinese (繁體中文) for title, action titles, and notes. Keep assigneeName exactly as written in the source (do not translate names).";
+  }
+  if (lang === "en") {
+    return "Output language: English for title, action titles, and notes. Keep assigneeName exactly as written in the source (do not translate names).";
+  }
+  return "Output language: keep the SAME language as the source minutes for title, action titles, and notes. Do NOT translate. Keep assigneeName exactly as written.";
+}
+
+function defaultMeetingTitle(lang: MinutesOutputLang) {
+  if (lang === "en") return "Meeting action items";
+  return "會議行動項目";
+}
+
+function mockMeetingExtract(
+  text: string,
+  lang: MinutesOutputLang = "original",
+): MeetingExtractResult {
   const lines = text
     .split(/\n+/)
     .map((l) => l.trim())
@@ -379,7 +408,7 @@ function mockMeetingExtract(text: string): MeetingExtractResult {
   );
   const pick = (actionLines.length > 0 ? actionLines : lines).slice(0, 8);
   return {
-    title: "會議行動項目",
+    title: defaultMeetingTitle(lang),
     meetingAt: null,
     actions: pick.map((line) => ({
       title: line.slice(0, 120),
@@ -398,49 +427,54 @@ function normalizeMeetingDate(v: unknown): string | null {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
-export async function extractMeetingActions(text: string): Promise<MeetingExtractResult> {
+export async function extractMeetingActions(
+  text: string,
+  opts?: { outputLang?: MinutesOutputLang },
+): Promise<MeetingExtractResult> {
+  const outputLang = normalizeMinutesOutputLang(opts?.outputLang);
   const body = text.trim();
   if (!body) {
-    return { title: "會議行動項目", meetingAt: null, actions: [], mock: true };
+    return { title: defaultMeetingTitle(outputLang), meetingAt: null, actions: [], mock: true };
   }
-  if (!hasAIKey()) return mockMeetingExtract(body);
+  if (!hasAIKey()) return mockMeetingExtract(body, outputLang);
 
   const model = getAIModel();
   try {
     const client = getAIClient();
+    const langRule = meetingLangRule(outputLang);
     const res = await client.chat.completions.create({
       model,
       temperature: 0.1,
       messages: [
         {
           role: "system",
-          content:
-            "你是香港工程項目會議紀錄助理。只回傳純 JSON，繁體中文。只根據文字抽出明確的行動項目（誰做什麼、何時）。完全忽略圖則、草圖、附圖、Drawing／Figure／Sketch 及任何圖像內容；不要為「見圖」「如圖所示」另開任務。",
+          content: `You are a Hong Kong construction project meeting-minutes assistant. Return pure JSON only. Extract clear action items (who does what, by when) from text only. Ignore drawings, sketches, figures, Drawing/Figure/Sketch; do not create tasks for "see drawing" / "as shown". ${langRule}`,
         },
         {
           role: "user",
-          content: `請從以下會議紀錄的文字抽出行動項目。只回傳 JSON：
+          content: `Extract action items from the meeting minutes text below. Return JSON only:
 {
-  "title": "會議短標題",
-  "meetingAt": "YYYY-MM-DD 或 null",
+  "title": "short meeting title",
+  "meetingAt": "YYYY-MM-DD or null",
   "actions": [
     {
-      "title": "要做的事（簡潔）",
-      "assigneeName": "負責人姓名或 null",
-      "dueAt": "YYYY-MM-DD 或 null",
-      "notes": "補充說明或 null"
+      "title": "concise action",
+      "assigneeName": "person name from source or null",
+      "dueAt": "YYYY-MM-DD or null",
+      "notes": "extra note or null"
     }
   ]
 }
-規則：
-- 只分析文字；忽略圖則、繪圖、附圖、圖號、Drawing／DWG／Figure
-- 只抽有跟進責任的事項；略過純資訊／已完成事項
-- 不要把「見附圖／見圖則／如圖」當成獨立任務
-- assigneeName 用紀錄裡出現的人名；沒有就 null
-- dueAt 僅在有明確日期時填寫
-- 最多 30 項
+Rules:
+- Text only; ignore drawings / figures / Drawing / DWG / Figure
+- Only follow-up actions; skip pure info or already-done items
+- Do not turn "see drawing" into a task
+- assigneeName must match names as written in the source; null if none
+- dueAt only when an explicit date exists
+- Max 30 items
+- ${langRule}
 
-會議紀錄文字：
+Meeting minutes text:
 ${body.slice(0, 18000)}`,
         },
       ],
@@ -458,6 +492,7 @@ ${body.slice(0, 18000)}`,
         notes?: string | null;
       }>;
     };
+    const fallbackTitle = defaultMeetingTitle(outputLang);
     const actions = (Array.isArray(parsed.actions) ? parsed.actions : [])
       .map((a) => ({
         title: String(a.title || "").trim(),
@@ -469,7 +504,7 @@ ${body.slice(0, 18000)}`,
       .slice(0, 30);
 
     return {
-      title: String(parsed.title || "會議行動項目").trim() || "會議行動項目",
+      title: String(parsed.title || fallbackTitle).trim() || fallbackTitle,
       meetingAt: normalizeMeetingDate(parsed.meetingAt),
       actions,
       mock: false,
@@ -477,7 +512,7 @@ ${body.slice(0, 18000)}`,
     };
   } catch (err) {
     console.error("extractMeetingActions failed", err);
-    return mockMeetingExtract(body);
+    return mockMeetingExtract(body, outputLang);
   }
 }
 

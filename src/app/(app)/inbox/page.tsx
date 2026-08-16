@@ -26,8 +26,14 @@ import {
   cn,
 } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
-import { type MinutesProgress, stashMinutesPreview, uploadMinutesPreview } from "@/lib/file-base64";
+import {
+  type MinutesOutputLang,
+  type MinutesProgress,
+  stashMinutesPreview,
+  uploadMinutesPreview,
+} from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
+import { MinutesLangSwitch } from "@/components/MinutesLangSwitch";
 
 type InboxRow = {
   id: string;
@@ -76,6 +82,7 @@ export default function InboxPage() {
   const [msg, setMsg] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [minutesProgress, setMinutesProgress] = useState<MinutesProgress | null>(null);
+  const [minutesLang, setMinutesLang] = useState<MinutesOutputLang>("original");
   const [inbound, setInbound] = useState<{
     address: string | null;
     domain?: string | null;
@@ -347,7 +354,9 @@ export default function InboxPage() {
     setBusy(true);
     setMinutesProgress({ pct: 4, label: "開始處理…" });
     try {
-      const data = await uploadMinutesPreview(file, setMinutesProgress);
+      const data = await uploadMinutesPreview(file, setMinutesProgress, {
+        outputLang: minutesLang,
+      });
       setMinutesProgress({ pct: 100, label: "完成，前往分析…" });
       await new Promise((r) => setTimeout(r, 280));
       stashMinutesPreview({
@@ -356,6 +365,7 @@ export default function InboxPage() {
         sourceName: data.sourceName,
         rawText: data.rawText,
         actions: data.actions || [],
+        outputLang: data.outputLang || minutesLang,
         mock: data.mock,
       });
       router.push("/tasks?minutesPreview=1");
@@ -503,16 +513,23 @@ export default function InboxPage() {
                       onPickMinutes(f);
                     }}
                   />
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => minutesFileRef.current?.click()}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-purple-800 transition hover:bg-white"
-                    title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
-                  >
-                    <FileUp size={14} />
-                    {busy && minutesProgress ? "處理中…" : "會議紀錄"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-1.5 px-1">
+                    <MinutesLangSwitch
+                      value={minutesLang}
+                      onChange={setMinutesLang}
+                      disabled={busy}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => minutesFileRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-purple-800 transition hover:bg-white"
+                      title="上傳會議紀錄；分析完成後會跳到任務頁確認行動項目"
+                    >
+                      <FileUp size={14} />
+                      {busy && minutesProgress ? "處理中…" : "會議紀錄"}
+                    </button>
+                  </div>
                 </div>
 
                 {(channel === "EMAIL" || channel === "MANUAL") && (

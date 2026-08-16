@@ -32,8 +32,9 @@ import {
 } from "lucide-react";
 import { STATUS_COLORS, TASK_STATUS_LABELS, cn, daysRemaining, formatDay } from "@/lib/labels";
 import { apiFetch, asArray } from "@/lib/api-client";
-import { type MinutesProgress, takeMinutesPreview, uploadMinutesPreview } from "@/lib/file-base64";
+import { type MinutesOutputLang, type MinutesProgress, takeMinutesPreview, uploadMinutesPreview, repreviewMinutesText } from "@/lib/file-base64";
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
+import { MinutesLangSwitch } from "@/components/MinutesLangSwitch";
 import {
   COLUMN_THEME,
   TASK_COLUMNS,
@@ -91,6 +92,7 @@ type MinutesPreview = {
   sourceName: string;
   rawText: string;
   actions: PreviewAction[];
+  outputLang?: MinutesOutputLang;
   mock?: boolean;
 };
 
@@ -316,6 +318,7 @@ export default function TasksPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<MinutesProgress | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [minutesLang, setMinutesLang] = useState<MinutesOutputLang>("original");
   const [menuMeetingId, setMenuMeetingId] = useState<string | null>(null);
   const [focusMeetingId, setFocusMeetingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -363,12 +366,15 @@ export default function TasksPage() {
     if (!wantPreview) return;
     const stashed = takeMinutesPreview();
     if (stashed) {
+      const lang = stashed.outputLang || "original";
+      setMinutesLang(lang);
       setPreview({
         title: stashed.title,
         meetingAt: stashed.meetingAt,
         sourceName: stashed.sourceName,
         rawText: stashed.rawText,
         actions: stashed.actions || [],
+        outputLang: lang,
         mock: stashed.mock,
       });
     }
@@ -524,7 +530,9 @@ export default function TasksPage() {
     setError("");
     setUploadProgress({ pct: 4, label: "開始處理…" });
     try {
-      const data = await uploadMinutesPreview(file, setUploadProgress);
+      const data = await uploadMinutesPreview(file, setUploadProgress, {
+        outputLang: minutesLang,
+      });
       setUploadProgress({ pct: 100, label: "完成" });
       await new Promise((r) => setTimeout(r, 280));
       setPreview({
@@ -533,6 +541,7 @@ export default function TasksPage() {
         sourceName: data.sourceName,
         rawText: data.rawText,
         actions: data.actions || [],
+        outputLang: data.outputLang || minutesLang,
         mock: data.mock,
       });
     } catch (err) {
@@ -599,6 +608,7 @@ export default function TasksPage() {
           {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <MinutesLangSwitch value={minutesLang} onChange={setMinutesLang} disabled={uploading} />
           <input
             ref={fileRef}
             type="file"
@@ -1028,9 +1038,45 @@ function MinutesPreviewModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const [lang, setLang] = useState<MinutesOutputLang>(preview.outputLang || "original");
+  const [reapplying, setReapplying] = useState(false);
+  const [reapplyError, setReapplyError] = useState("");
+
+  useEffect(() => {
+    setLang(preview.outputLang || "original");
+  }, [preview.outputLang]);
+
   function updateAction(idx: number, patch: Partial<PreviewAction>) {
     const actions = preview.actions.map((a, i) => (i === idx ? { ...a, ...patch } : a));
     onChange({ ...preview, actions });
+  }
+
+  async function applyLanguage() {
+    if (!preview.rawText?.trim()) {
+      setReapplyError("沒有可重新分析的原文");
+      return;
+    }
+    setReapplying(true);
+    setReapplyError("");
+    try {
+      const data = await repreviewMinutesText({
+        rawText: preview.rawText,
+        fileName: preview.sourceName,
+        outputLang: lang,
+      });
+      onChange({
+        ...preview,
+        title: data.title,
+        meetingAt: data.meetingAt ?? preview.meetingAt,
+        actions: data.actions || [],
+        outputLang: data.outputLang || lang,
+        mock: data.mock,
+      });
+    } catch (err) {
+      setReapplyError(err instanceof Error ? err.message : "重新分析失敗");
+    } finally {
+      setReapplying(false);
+    }
   }
 
   return (
@@ -1048,6 +1094,20 @@ function MinutesPreviewModal({
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
             <X size={16} />
           </button>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-500">輸出語言</span>
+          <MinutesLangSwitch value={lang} onChange={setLang} disabled={reapplying || confirming} />
+          <button
+            type="button"
+            disabled={reapplying || confirming || lang === (preview.outputLang || "original")}
+            onClick={applyLanguage}
+            className="axon-btn axon-btn-ghost min-h-8 px-3 text-xs"
+          >
+            {reapplying ? "套用中…" : "套用"}
+          </button>
+          {reapplyError && <span className="text-xs text-rose-600">{reapplyError}</span>}
         </div>
 
         <div className="mb-4 grid gap-2 sm:grid-cols-2">
@@ -1130,7 +1190,7 @@ function MinutesPreviewModal({
           </button>
           <button
             type="button"
-            disabled={confirming || preview.actions.length === 0}
+            disabled={confirming || reapplying || preview.actions.length === 0}
             onClick={onConfirm}
             className="axon-btn axon-btn-primary min-h-9 px-4 text-sm"
           >

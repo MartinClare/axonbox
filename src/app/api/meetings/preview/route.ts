@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/session";
-import { extractMeetingActions } from "@/lib/ai";
+import { extractMeetingActions, normalizeMinutesOutputLang } from "@/lib/ai";
 import {
   extractMinutesText,
   isMinutesFile,
@@ -15,7 +15,6 @@ export const maxDuration = 120;
 function decodeFileName(header: string | null) {
   if (!header) return "minutes.bin";
   try {
-    // UTF-8 via base64url / base64
     const b64 = header.replace(/-/g, "+").replace(/_/g, "/");
     return Buffer.from(b64, "base64").toString("utf8") || "minutes.bin";
   } catch {
@@ -29,9 +28,7 @@ function decodeFileName(header: string | null) {
 
 /**
  * POST raw file bytes (Content-Type = file mime).
- * Headers: X-File-Name (base64 utf-8), X-File-Mime (optional)
- *
- * Avoids JSON base64 (~33% larger) and multipart overhead that hit ~10MB proxy caps.
+ * Headers: X-File-Name (base64 utf-8), X-File-Mime (optional), X-Output-Lang (original|zh|en)
  */
 export async function POST(req: NextRequest) {
   const { error } = await requireSession();
@@ -56,6 +53,7 @@ export async function POST(req: NextRequest) {
       req.headers.get("x-file-mime") ||
       req.headers.get("content-type") ||
       "";
+    const outputLang = normalizeMinutesOutputLang(req.headers.get("x-output-lang"));
 
     const meta = { name: fileName, mime };
     if (!isMinutesFile(meta)) {
@@ -70,7 +68,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const extracted = await extractMeetingActions(rawText);
+    const extracted = await extractMeetingActions(rawText, { outputLang });
     const users = (await prisma.user.findMany({
       select: { id: true, name: true, email: true, company: true },
     })) as DirectoryUser[];
@@ -94,6 +92,7 @@ export async function POST(req: NextRequest) {
       sourceName: fileName,
       rawText,
       actions,
+      outputLang,
       mock: extracted.mock,
       model: extracted.model || null,
     });
