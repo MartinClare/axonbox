@@ -245,7 +245,7 @@ export default function CapturePage() {
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm transition",
                 mode === k
-                  ? "bg-[var(--axon-navy)] text-white"
+                  ? "bg-[var(--axon-brand)] text-white"
                   : "text-slate-600 hover:bg-slate-50",
               )}
             >
@@ -318,7 +318,7 @@ export default function CapturePage() {
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-full bg-[var(--axon-navy)] px-4 py-2 text-sm text-white"
+                  className="inline-flex items-center gap-2 rounded-full bg-[var(--axon-brand)] px-4 py-2 text-sm text-white"
                 >
                   <Mic size={14} />
                   {t("capture.uploadVoice")}
@@ -420,7 +420,7 @@ export default function CapturePage() {
                     <span
                       className={cn(
                         "rounded-full px-2.5 py-0.5 text-[11px] text-white",
-                        isRecord ? "bg-sky-700" : "bg-[var(--axon-navy)]",
+                        isRecord ? "bg-sky-700" : "bg-[var(--axon-brand)]",
                       )}
                     >
                       {isRecord ? t("capture.recordStatus") : t("capture.findIssue")}

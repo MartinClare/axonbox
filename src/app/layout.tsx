@@ -5,6 +5,7 @@ import { Providers } from "@/components/Providers";
 import { PwaRegister } from "@/components/PwaRegister";
 import { ServerStatus } from "@/components/ServerStatus";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
 const plex = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -47,11 +48,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-Hant" className={plex.variable}>
+    <html lang="zh-Hant" className={plex.variable} suppressHydrationWarning>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content={APP_NAME} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className={`${plex.className} antialiased`}>
         <Providers>

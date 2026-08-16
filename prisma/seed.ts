@@ -1,12 +1,47 @@
 import { randomBytes } from "crypto";
+import { readFile, copyFile, mkdir } from "fs/promises";
+import path from "path";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { putStoredFile, hasObjectStore } from "../src/lib/storage";
 
 function generateInboundKey() {
   return randomBytes(16).toString("hex");
 }
 
 const prisma = new PrismaClient();
+
+const DEMO_PHOTOS = [
+  "demo-01-scaffold.jpg",
+  "demo-02-rebar.jpg",
+  "demo-03-opening.jpg",
+  "demo-04-materials.jpg",
+  "demo-05-facade.jpg",
+  "demo-06-water.jpg",
+  "demo-07-ppe.jpg",
+  "demo-08-concrete.jpg",
+  "demo-09-dust.jpg",
+  "demo-10-steel.jpg",
+  "demo-11-net.jpg",
+  "demo-12-tiles.jpg",
+  "demo-13-lighting.jpg",
+  "demo-14-crane.jpg",
+  "demo-15-waterproof.jpg",
+  "demo-16-noise.jpg",
+] as const;
+
+async function ensureDemoPhoto(fileName: string) {
+  const key = `evidence/${fileName}`;
+  const src = path.join(process.cwd(), "prisma", "seed-assets", "evidence", fileName);
+  const bytes = await readFile(src);
+  await putStoredFile(key, bytes, "image/jpeg");
+  if (!hasObjectStore()) {
+    const destDir = path.join(process.cwd(), "public", "uploads", "evidence");
+    await mkdir(destDir, { recursive: true });
+    await copyFile(src, path.join(destDir, fileName));
+  }
+  return `/uploads/${key}`;
+}
 
 // All Chinese via Unicode escapes so the seed file stays ASCII-safe on any OS/encoding.
 const T = {
@@ -382,11 +417,16 @@ async function main() {
       },
     });
 
+    const photoName = DEMO_PHOTOS[i % DEMO_PHOTOS.length];
+    const filePath = await ensureDemoPhoto(photoName);
+
     await prisma.evidence.create({
       data: {
         type: "PHOTO",
         title: s.title,
         location: s.location,
+        filePath,
+        mime: "image/jpeg",
         status: s.status === "CLOSED" ? "HANDLED" : s.status === "OPEN" ? "PENDING" : "IN_PROGRESS",
         source: i % 3 === 0 ? "WHATSAPP_IMPORT" : i % 3 === 1 ? "UPLOAD" : "FOLDER",
         category: s.category,

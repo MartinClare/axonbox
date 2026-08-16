@@ -2,6 +2,7 @@
 
 import { SessionProvider } from "next-auth/react";
 import { I18nProvider } from "@/components/I18nProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import type { UiLocale } from "@/lib/i18n/types";
 
 export function ClientProviders({
@@ -13,7 +14,9 @@ export function ClientProviders({
 }) {
   return (
     <SessionProvider>
-      <I18nProvider initialLocale={initialLocale}>{children}</I18nProvider>
+      <ThemeProvider>
+        <I18nProvider initialLocale={initialLocale}>{children}</I18nProvider>
+      </ThemeProvider>
     </SessionProvider>
   );
 }

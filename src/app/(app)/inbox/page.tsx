@@ -463,7 +463,7 @@ export default function InboxPage() {
             className={cn(
               "rounded-full px-3.5 py-2 text-sm transition",
               filter === key
-                ? "bg-[var(--axon-ink)] text-white"
+                ? "bg-[var(--axon-brand)] text-white"
                 : "bg-white text-slate-600 ring-1 ring-[var(--axon-line)]",
             )}
           >
@@ -496,7 +496,7 @@ export default function InboxPage() {
                       className={cn(
                         "rounded-lg px-3 py-2 text-sm transition",
                         channel === c
-                          ? "bg-[var(--axon-ink)] text-white"
+                          ? "bg-[var(--axon-brand)] text-white"
                           : "text-slate-600 hover:bg-white",
                       )}
                     >
@@ -766,7 +766,7 @@ export default function InboxPage() {
               {extract && (
                 <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[var(--axon-navy)] px-2.5 py-0.5 text-[11px] text-white">
+                    <span className="rounded-full bg-[var(--axon-brand)] px-2.5 py-0.5 text-[11px] text-white">
                       {categoryLabels[extract.category] || extract.category}
                     </span>
                     <span className={cn("text-xs font-semibold", SEVERITY_COLORS[extract.severity])}>

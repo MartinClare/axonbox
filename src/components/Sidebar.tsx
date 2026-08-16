@@ -27,6 +27,7 @@ import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/labels";
 import { APP_NAME } from "@/lib/brand";
 import { useI18n } from "@/components/I18nProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type NavItem = {
   href: string;
@@ -50,7 +51,7 @@ function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
           alt=""
           className={cn(box, "object-cover ring-2 ring-[var(--axon-signal)]/80")}
         />
-        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[var(--axon-accent)] ring-2 ring-[var(--axon-ink)]" />
+        <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[var(--axon-accent)] ring-2 ring-[var(--axon-brand)]" />
       </div>
       <div>
         <div className="text-[15px] font-semibold tracking-wide">{APP_NAME}</div>
@@ -167,9 +168,12 @@ export function Sidebar() {
 
   const userBlock = (
     <div className="border-t border-white/10 px-4 py-4">
-      <div className="mb-3 text-xs text-white/60">
-        {user?.name || t("nav.userFallback")}
-        <div className="truncate text-white/30">{user?.email}</div>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0 text-xs text-white/60">
+          {user?.name || t("nav.userFallback")}
+          <div className="truncate text-white/30">{user?.email}</div>
+        </div>
+        <ThemeToggle compact />
       </div>
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
@@ -189,7 +193,7 @@ export function Sidebar() {
     <>
       <aside
         data-help="sidebar"
-        className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-[var(--axon-ink)] text-white md:flex"
+        className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col bg-[var(--axon-brand)] text-white md:flex"
       >
         <div className="border-b border-white/10 px-5 py-6">
           <BrandMark />
@@ -199,7 +203,7 @@ export function Sidebar() {
         {userBlock}
       </aside>
 
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[var(--axon-ink)] px-4 py-3 text-white md:hidden">
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[var(--axon-brand)] px-4 py-3 text-white md:hidden">
         <div className="flex items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -212,25 +216,28 @@ export function Sidebar() {
             <div className="text-[10px] font-medium text-[var(--axon-signal)]">{currentLabel}</div>
           </div>
         </div>
-        <button
-          type="button"
-          aria-label={t("nav.openMenu")}
-          onClick={() => setOpen(true)}
-          className="rounded-lg p-2.5 text-white/80 hover:bg-white/10"
-        >
-          <Menu size={20} />
-        </button>
+        <div className="flex items-center gap-1">
+          <ThemeToggle compact />
+          <button
+            type="button"
+            aria-label={t("nav.openMenu")}
+            onClick={() => setOpen(true)}
+            className="rounded-lg p-2.5 text-white/80 hover:bg-white/10"
+          >
+            <Menu size={20} />
+          </button>
+        </div>
       </header>
 
       {open && (
         <div className="fixed inset-0 z-50 md:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-[var(--axon-ink)]/55 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-[var(--axon-brand)]/55 backdrop-blur-[2px]"
             aria-label={t("nav.closeMenu")}
             onClick={() => setOpen(false)}
           />
-          <aside className="absolute inset-y-0 right-0 flex w-[min(86vw,300px)] flex-col bg-[var(--axon-ink)] text-white shadow-2xl">
+          <aside className="absolute inset-y-0 right-0 flex w-[min(86vw,300px)] flex-col bg-[var(--axon-brand)] text-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
               <BrandMark size="sm" />
               <button

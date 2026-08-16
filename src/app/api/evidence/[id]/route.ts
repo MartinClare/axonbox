@@ -78,3 +78,26 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   });
   return NextResponse.json(updated);
 }
+
+export async function DELETE(_req: NextRequest, ctx: Ctx) {
+  const { error } = await requireSession();
+  if (error) return error;
+  const { id } = await ctx.params;
+
+  const existing = await prisma.evidence.findUnique({
+    where: { id },
+    select: { id: true, title: true, filePath: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  try {
+    await prisma.evidence.delete({ where: { id } });
+    return NextResponse.json({ ok: true, deleted: 1, id: existing.id });
+  } catch (err) {
+    console.error("DELETE /api/evidence/[id] failed", err);
+    return NextResponse.json(
+      { error: "Delete failed", detail: String(err) },
+      { status: 500 },
+    );
+  }
+}

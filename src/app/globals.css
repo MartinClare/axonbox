@@ -1,25 +1,33 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
   AxonBox engineering palette
-  Navy #003049 · Red #D62828 · Orange #F77F00 · Yellow #FECE32 · Cream #FBF3CA
+  Navy #003049 · Red #D62828 · Orange #F77F00 · Yellow #FECE32
+  Light: white surfaces · Dark: navy ink surfaces
 */
 :root {
+  --axon-brand: #003049;
   --axon-ink: #003049;
   --axon-navy: #003049;
   --axon-blue: #02445f;
   --axon-steel: #2a5a72;
-  --axon-sand: #f7efc4;
-  --axon-line: #d9cdb0;
-  --axon-line-strong: #c4b48a;
-  --axon-cream: #fbf3ca;
-  --axon-cream-deep: #f3e7b0;
+  --axon-sand: #f1f5f9;
+  --axon-line: #e2e8f0;
+  --axon-line-strong: #cbd5e1;
+  --axon-cream: #ffffff;
+  --axon-cream-deep: #f8fafc;
   --axon-accent: #f77f00;
   --axon-signal: #fece32;
   --axon-danger: #d62828;
   --axon-ok: #1f6b4a;
-  --axon-white: #fffdf6;
-  --background: #fbf3ca;
+  --axon-white: #ffffff;
+  --axon-panel: #ffffff;
+  --axon-muted-fg: rgba(0, 48, 73, 0.58);
+  --axon-placeholder: rgba(0, 48, 73, 0.35);
+  --axon-grid: rgba(0, 48, 73, 0.04);
+  --background: #ffffff;
   --foreground: #003049;
   --font-cjk: var(--font-plex), "IBM Plex Sans", "PingFang TC", "Microsoft JhengHei",
     "Noto Sans TC", "Heiti TC", "Segoe UI", sans-serif;
@@ -27,6 +35,32 @@
   --radius-md: 12px;
   --radius-lg: 16px;
   --shadow-panel: 0 1px 0 rgba(0, 48, 73, 0.04), 0 8px 24px rgba(0, 48, 73, 0.05);
+}
+
+.dark {
+  /* Brand chrome stays navy; ink/navy flip for readable body text */
+  --axon-brand: #07111f;
+  --axon-ink: #e8eef2;
+  --axon-navy: #e8eef2;
+  --axon-blue: #7db8d1;
+  --axon-steel: #93aebf;
+  --axon-sand: #152433;
+  --axon-line: #243747;
+  --axon-line-strong: #355066;
+  --axon-cream: #0b141c;
+  --axon-cream-deep: #101c27;
+  --axon-accent: #ff9a33;
+  --axon-signal: #fece32;
+  --axon-danger: #f07167;
+  --axon-ok: #3d9b6e;
+  --axon-white: #132029;
+  --axon-panel: #132029;
+  --axon-muted-fg: rgba(232, 238, 242, 0.62);
+  --axon-placeholder: rgba(232, 238, 242, 0.38);
+  --axon-grid: rgba(255, 255, 255, 0.035);
+  --background: #0b141c;
+  --foreground: #e8eef2;
+  --shadow-panel: 0 1px 0 rgba(0, 0, 0, 0.25), 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 @theme inline {
@@ -37,6 +71,11 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -44,20 +83,27 @@ body {
   color: var(--foreground);
   font-family: var(--font-cjk);
   text-rendering: optimizeLegibility;
-  background-color: var(--axon-cream);
+  background-color: var(--background);
   background-image:
-    linear-gradient(rgba(0, 48, 73, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 48, 73, 0.035) 1px, transparent 1px),
-    radial-gradient(900px 420px at 0% 0%, rgba(247, 127, 0, 0.1), transparent 55%),
-    radial-gradient(800px 380px at 100% 0%, rgba(254, 206, 50, 0.22), transparent 50%),
-    linear-gradient(180deg, #fbf3ca 0%, #f7efc4 100%);
+    linear-gradient(var(--axon-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--axon-grid) 1px, transparent 1px),
+    radial-gradient(900px 420px at 0% 0%, rgba(247, 127, 0, 0.06), transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, rgba(2, 68, 95, 0.05), transparent 50%);
   background-size:
     28px 28px,
     28px 28px,
     auto,
-    auto,
     auto;
   background-attachment: fixed;
+}
+
+.dark body,
+html.dark body {
+  background-image:
+    linear-gradient(var(--axon-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--axon-grid) 1px, transparent 1px),
+    radial-gradient(900px 420px at 0% 0%, rgba(247, 127, 0, 0.12), transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, rgba(125, 184, 209, 0.08), transparent 50%);
 }
 
 * {
@@ -76,7 +122,7 @@ button {
   width: 100%;
   border-radius: var(--radius-md);
   border: 1px solid var(--axon-line);
-  background: var(--axon-white);
+  background: var(--axon-panel);
   padding: 0.75rem 0.9rem;
   font-size: 0.9375rem;
   color: var(--axon-ink);
@@ -84,7 +130,7 @@ button {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .axon-input::placeholder {
-  color: rgba(0, 48, 73, 0.35);
+  color: var(--axon-placeholder);
 }
 .axon-input:focus {
   border-color: var(--axon-accent);
@@ -111,12 +157,15 @@ button {
   transform: translateY(1px);
 }
 .axon-btn-primary {
-  background: var(--axon-ink);
+  background: var(--axon-brand);
   color: #fff;
   box-shadow: 0 2px 0 rgba(0, 48, 73, 0.2);
 }
 .axon-btn-primary:hover:not(:disabled) {
   background: #02445f;
+}
+.dark .axon-btn-primary:hover:not(:disabled) {
+  background: #0f2740;
 }
 .axon-btn-accent {
   background: var(--axon-accent);
@@ -132,18 +181,18 @@ button {
 }
 .axon-btn-ghost {
   border: 1px solid var(--axon-line-strong);
-  background: var(--axon-white);
+  background: var(--axon-panel);
   color: var(--axon-ink);
 }
 .axon-btn-ghost:hover:not(:disabled) {
   border-color: var(--axon-accent);
-  background: #fff8e4;
+  background: color-mix(in srgb, var(--axon-accent) 12%, var(--axon-panel));
 }
 
 .axon-panel {
   position: relative;
   border: 1px solid var(--axon-line);
-  background: rgba(255, 253, 246, 0.92);
+  background: color-mix(in srgb, var(--axon-panel) 92%, transparent);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(6px);
@@ -161,7 +210,7 @@ button {
 }
 
 .axon-muted {
-  color: rgba(0, 48, 73, 0.58);
+  color: var(--axon-muted-fg);
 }
 
 .axon-kicker {
@@ -185,14 +234,14 @@ button {
 .axon-progress {
   height: 8px;
   border-radius: 999px;
-  background: rgba(0, 48, 73, 0.08);
+  background: color-mix(in srgb, var(--axon-ink) 8%, transparent);
   overflow: hidden;
 }
 .axon-progress > span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--axon-ink), var(--axon-accent));
+  background: linear-gradient(90deg, #003049, var(--axon-accent));
 }
 
 /* Page rhythm — desktop vs phone */
@@ -214,7 +263,7 @@ button {
   justify-content: space-between;
   gap: 1rem;
   padding-bottom: 0.25rem;
-  border-bottom: 1px solid rgba(0, 48, 73, 0.08);
+  border-bottom: 1px solid color-mix(in srgb, var(--axon-ink) 8%, transparent);
 }
 
 .axon-quick-grid {
@@ -236,7 +285,7 @@ button {
   padding: 0.8rem 0.9rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--axon-line);
-  background: var(--axon-white);
+  background: var(--axon-panel);
   color: var(--axon-ink);
   font-size: 0.875rem;
   font-weight: 600;
@@ -256,7 +305,57 @@ button {
   border-radius: 8px;
   background: var(--axon-sand);
   color: var(--axon-ink);
-  border: 1px solid rgba(0, 48, 73, 0.08);
+  border: 1px solid color-mix(in srgb, var(--axon-ink) 8%, transparent);
+}
+
+/* Remap common Tailwind light-only utilities so pages work in dark mode
+   without rewriting every screen. Prefer CSS vars / dark: going forward. */
+.dark .bg-white {
+  background-color: var(--axon-panel) !important;
+}
+.dark .bg-white\/80 {
+  background-color: color-mix(in srgb, var(--axon-panel) 80%, transparent) !important;
+}
+.dark .bg-slate-50,
+.dark .bg-slate-50\/80 {
+  background-color: var(--axon-sand) !important;
+}
+.dark .bg-slate-100 {
+  background-color: color-mix(in srgb, var(--axon-sand) 88%, #fff) !important;
+}
+.dark .bg-slate-100\/80 {
+  background-color: color-mix(in srgb, var(--axon-sand) 80%, transparent) !important;
+}
+.dark .text-slate-400 {
+  color: color-mix(in srgb, var(--axon-steel) 85%, transparent) !important;
+}
+.dark .text-slate-500,
+.dark .text-slate-600 {
+  color: var(--axon-steel) !important;
+}
+.dark .text-slate-700,
+.dark .text-slate-800,
+.dark .text-slate-900 {
+  color: var(--axon-ink) !important;
+}
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: var(--axon-line) !important;
+}
+.dark .ring-slate-200,
+.dark .ring-\[var\(--axon-line\)\] {
+  --tw-ring-color: var(--axon-line) !important;
+}
+.dark .hover\:bg-sky-50:hover,
+.dark .hover\:bg-slate-50:hover {
+  background-color: var(--axon-sand) !important;
+}
+.dark .hover\:text-slate-700:hover {
+  color: var(--axon-ink) !important;
+}
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--axon-line) !important;
 }
 
 /* Mobile bottom-nav safe spacing handled in layout */

@@ -61,8 +61,13 @@ export function evidenceTags(item: EvidenceItem) {
 }
 
 export function isEvidenceImage(item: EvidenceItem) {
-  if (item.type === "PHOTO") return true;
+  const path = item.filePath || "";
+  if (!path) return false;
   const mime = (item.mime || "").toLowerCase();
+  // Email signature GIFs are often typed PHOTO but look broken in the gallery.
+  if (mime === "image/gif" || /\.gif$/i.test(path)) return false;
   if (mime.startsWith("image/")) return true;
-  return /\.(jpe?g|png|webp|gif|bmp)$/i.test(item.filePath || "");
+  if (/\.(jpe?g|png|webp|bmp)$/i.test(path)) return true;
+  // PHOTO without a real image path should fall back to the text tile, not a broken img.
+  return false;
 }

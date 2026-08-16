@@ -305,7 +305,7 @@ export default function DirectoryPage() {
           )}
           <button
             onClick={tab === "people" ? openCreateUser : openCreateSub}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--axon-ink)] px-4 py-2.5 text-sm text-white transition hover:bg-[var(--axon-navy)]"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--axon-brand)] px-4 py-2.5 text-sm text-white transition hover:bg-[var(--axon-brand)]"
           >
             <Plus size={16} />
             {tab === "people" ? t("dir.addPerson") : t("dir.addCompany")}
@@ -320,7 +320,7 @@ export default function DirectoryPage() {
             className={cn(
               "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm transition",
               tab === "people"
-                ? "bg-[var(--axon-ink)] text-white"
+                ? "bg-[var(--axon-brand)] text-white"
                 : "text-slate-600 hover:bg-slate-50",
             )}
           >
@@ -333,7 +333,7 @@ export default function DirectoryPage() {
             className={cn(
               "inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm transition",
               tab === "companies"
-                ? "bg-[var(--axon-ink)] text-white"
+                ? "bg-[var(--axon-brand)] text-white"
                 : "text-slate-600 hover:bg-slate-50",
             )}
           >
@@ -633,7 +633,7 @@ export default function DirectoryPage() {
             <button
               disabled={busy || !userForm.name || !userForm.email}
               onClick={saveUser}
-              className="rounded-xl bg-[var(--axon-ink)] px-4 py-2 text-sm text-white disabled:opacity-40"
+              className="rounded-xl bg-[var(--axon-brand)] px-4 py-2 text-sm text-white disabled:opacity-40"
             >
               {t("common.save")}
             </button>
@@ -741,7 +741,7 @@ export default function DirectoryPage() {
             <button
               disabled={busy || !subForm.name}
               onClick={saveSub}
-              className="rounded-xl bg-[var(--axon-ink)] px-4 py-2 text-sm text-white disabled:opacity-40"
+              className="rounded-xl bg-[var(--axon-brand)] px-4 py-2 text-sm text-white disabled:opacity-40"
             >
               {t("common.save")}
             </button>

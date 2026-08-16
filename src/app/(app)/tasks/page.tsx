@@ -679,7 +679,7 @@ export default function TasksPage() {
               onClick={() => setView("board")}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm",
-                view === "board" ? "bg-[var(--axon-ink)] text-white" : "text-slate-600",
+                view === "board" ? "bg-[var(--axon-brand)] text-white" : "text-slate-600",
               )}
             >
               {t("tasks.viewBoard")}
@@ -688,7 +688,7 @@ export default function TasksPage() {
               onClick={() => setView("list")}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm",
-                view === "list" ? "bg-[var(--axon-ink)] text-white" : "text-slate-600",
+                view === "list" ? "bg-[var(--axon-brand)] text-white" : "text-slate-600",
               )}
             >
               {t("tasks.viewList")}

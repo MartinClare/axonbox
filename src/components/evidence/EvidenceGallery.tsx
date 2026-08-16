@@ -55,15 +55,25 @@ export function EvidenceGallery({
                 src={url!}
                 alt=""
                 className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03]"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = "none";
+                  const fallback = el.nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.classList.remove("hidden");
+                }}
               />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center">
-                <span className="rounded bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  {item.type}
-                </span>
-                <span className="line-clamp-3 text-xs text-slate-600">{item.title}</span>
-              </div>
-            )}
+            ) : null}
+            <div
+              className={cn(
+                "flex h-full flex-col items-center justify-center gap-1 px-2 text-center",
+                showImg ? "hidden" : "",
+              )}
+            >
+              <span className="rounded bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {item.type}
+              </span>
+              <span className="line-clamp-3 text-xs text-slate-600">{item.title}</span>
+            </div>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/35 to-transparent px-2 pb-2 pt-8">
               <div className="flex flex-wrap gap-1">
                 <span
@@ -75,7 +85,7 @@ export function EvidenceGallery({
                   {evidenceStatusLabels[item.status] || item.status}
                 </span>
                 {item.case && (
-                  <span className="rounded-full bg-[var(--axon-ink)]/85 px-1.5 py-0.5 text-[10px] text-white">
+                  <span className="rounded-full bg-[var(--axon-brand)]/85 px-1.5 py-0.5 text-[10px] text-white">
                     {item.case.caseNo}
                     <span className="opacity-80">
                       {" · "}

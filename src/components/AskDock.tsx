@@ -88,7 +88,7 @@ export function AskDock() {
           type="button"
           data-help-hide="ask"
           onClick={() => setOpen(true)}
-          className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-2 rounded-full bg-[var(--axon-ink)] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(0,48,73,0.28)] ring-2 ring-[var(--axon-signal)] transition hover:bg-[#02445f] md:bottom-6 md:right-6"
+          className="fixed bottom-[4.75rem] right-4 z-40 flex items-center gap-2 rounded-full bg-[var(--axon-brand)] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-[rgba(0,48,73,0.28)] ring-2 ring-[var(--axon-signal)] transition hover:bg-[#02445f] md:bottom-6 md:right-6"
           aria-label={t("ask.fabAria")}
         >
           <MessageCircleQuestion size={18} />
@@ -103,7 +103,7 @@ export function AskDock() {
             "inset-x-3 bottom-[4.5rem] max-h-[min(72vh,560px)] rounded-2xl md:inset-auto md:bottom-6 md:right-6 md:h-[520px] md:w-[400px]",
           )}
         >
-          <header className="border-b border-[var(--axon-line)] bg-[var(--axon-ink)] px-4 py-3 text-white">
+          <header className="border-b border-[var(--axon-line)] bg-[var(--axon-brand)] px-4 py-3 text-white">
             <div className="mb-2 h-1 rounded-full bg-gradient-to-r from-[var(--axon-danger)] via-[var(--axon-accent)] to-[var(--axon-signal)]" />
             <div className="flex items-center justify-between">
               <div>
