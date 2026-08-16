@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Building2,
+  Copy,
   Pencil,
   Plus,
   Trash2,
@@ -21,6 +22,8 @@ type UserRow = {
   title: string | null;
   company: string | null;
   notes: string | null;
+  inboundKey?: string | null;
+  inboundAddress?: string | null;
   _count?: { assignedCases: number; assignedTasks: number };
 };
 
@@ -47,6 +50,7 @@ type UserForm = {
   title: string;
   company: string;
   notes: string;
+  inboundKey: string;
   password: string;
 };
 
@@ -70,6 +74,7 @@ const emptyUser = (): UserForm => ({
   title: "",
   company: "",
   notes: "",
+  inboundKey: "",
   password: "demo1234",
 });
 
@@ -122,7 +127,8 @@ export default function DirectoryPage() {
         u.name.toLowerCase().includes(s) ||
         u.email.toLowerCase().includes(s) ||
         (u.company || "").toLowerCase().includes(s) ||
-        (u.title || "").toLowerCase().includes(s),
+        (u.title || "").toLowerCase().includes(s) ||
+        (u.inboundKey || "").toLowerCase().includes(s),
     );
   }, [users, q]);
 
@@ -159,6 +165,7 @@ export default function DirectoryPage() {
       title: u.title || "",
       company: u.company || "",
       notes: u.notes || "",
+      inboundKey: u.inboundKey || "",
       password: "",
     });
     setUserOpen(true);
@@ -332,6 +339,7 @@ export default function DirectoryPage() {
                 <th className="px-4 py-3 font-medium">姓名</th>
                 <th className="px-4 py-3 font-medium">角色</th>
                 <th className="px-4 py-3 font-medium">職稱 / 公司</th>
+                <th className="px-4 py-3 font-medium">轉寄地址</th>
                 <th className="px-4 py-3 font-medium">聯絡</th>
                 <th className="px-4 py-3 font-medium">事件</th>
                 <th className="px-4 py-3 font-medium" />
@@ -355,6 +363,24 @@ export default function DirectoryPage() {
                   <td className="px-4 py-3 text-slate-600">
                     <div>{u.title || "—"}</div>
                     <div className="text-xs text-slate-400">{u.company || ""}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {u.inboundAddress ? (
+                      <button
+                        type="button"
+                        className="inline-flex max-w-[220px] items-center gap-1 text-left text-xs text-[var(--axon-blue)]"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(u.inboundAddress || "");
+                          flash("已複製轉寄地址");
+                        }}
+                        title="複製到郵件 To"
+                      >
+                        <Copy size={12} />
+                        <span className="truncate">{u.inboundAddress}</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{u.phone || "—"}</td>
                   <td className="px-4 py-3 text-slate-500">
@@ -382,7 +408,7 @@ export default function DirectoryPage() {
               ))}
               {filteredUsers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
                     尚無人員，點右上角新增
                   </td>
                 </tr>
@@ -532,6 +558,36 @@ export default function DirectoryPage() {
                 placeholder="總承建商 / 顧問公司"
               />
             </Field>
+            {editingUser?.inboundAddress && (
+              <Field label="轉寄地址（保密代號）" className="sm:col-span-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 break-all rounded-xl bg-slate-50 px-3 py-2 text-xs">
+                    {editingUser.inboundAddress}
+                  </code>
+                  <button
+                    type="button"
+                    className="rounded-xl px-3 py-2 text-xs text-[var(--axon-blue)] hover:bg-slate-100"
+                    onClick={async () => {
+                      const res = await fetch(`/api/users/${editingUser.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ regenerateInboundKey: true }),
+                      });
+                      if (!res.ok) {
+                        flash("無法重設轉寄代號");
+                        return;
+                      }
+                      flash("已重設轉寄代號，請重新複製地址");
+                      await load();
+                      const next = await res.json();
+                      setUserForm({ ...userForm, inboundKey: next.inboundKey || "" });
+                    }}
+                  >
+                    重設代號
+                  </button>
+                </div>
+              </Field>
+            )}
             <Field label={editingUser ? "重設密碼（可留空）" : "初始密碼"}>
               <input
                 className="w-full rounded-xl border border-[var(--axon-line)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--axon-steel)]"

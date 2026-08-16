@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/session";
+import {
+  ensureAllInboundKeys,
+  inboundAddressForKey,
+  uniqueInboundKey,
+} from "@/lib/inbound-key";
+import { getInboundAddress } from "@/lib/email-inbound";
 
 const ROLES = new Set(["OWNER", "ADMIN", "SUPERVISOR", "VIEWER", "SUBCONTRACTOR"]);
 
@@ -9,6 +15,9 @@ export async function GET() {
   const { error } = await requirePermission("users:read");
   if (error) return error;
 
+  await ensureAllInboundKeys();
+  const org = await prisma.orgSettings.findFirst();
+  const domainAddress = getInboundAddress(org?.inboundEmail);
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "asc" },
     select: {
@@ -20,11 +29,19 @@ export async function GET() {
       title: true,
       company: true,
       notes: true,
+      inboundKey: true,
       createdAt: true,
       _count: { select: { assignedCases: true, assignedTasks: true } },
     },
   });
-  return NextResponse.json(users);
+  return NextResponse.json(
+    users.map((u) => ({
+      ...u,
+      inboundAddress: u.inboundKey
+        ? inboundAddressForKey(u.inboundKey, domainAddress)
+        : "",
+    })),
+  );
 }
 
 export async function POST(req: Request) {
@@ -49,6 +66,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "email already exists" }, { status: 409 });
   }
 
+  const inboundKey = await uniqueInboundKey();
   const user = await prisma.user.create({
     data: {
       name,
@@ -58,6 +76,7 @@ export async function POST(req: Request) {
       title: body.title?.trim() || null,
       company: body.company?.trim() || null,
       notes: body.notes?.trim() || null,
+      inboundKey,
       passwordHash: await bcrypt.hash(password, 10),
     },
     select: {
@@ -69,6 +88,7 @@ export async function POST(req: Request) {
       title: true,
       company: true,
       notes: true,
+      inboundKey: true,
       createdAt: true,
     },
   });

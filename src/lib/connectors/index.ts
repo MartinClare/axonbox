@@ -31,7 +31,7 @@ export function listConnectorStatus() {
       channel === "WHATSAPP"
         ? "WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID"
         : channel === "EMAIL"
-          ? "GMAIL_REFRESH_TOKEN or MS_GRAPH_TOKEN"
+          ? "INBOUND_EMAIL_ADDRESS + webhook/IMAP"
           : "WECHAT_APP_ID + WECHAT_APP_SECRET",
   }));
 }

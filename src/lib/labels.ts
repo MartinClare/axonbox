@@ -7,8 +7,8 @@ export const CHANNEL_LABELS: Record<string, string> = {
 
 export const INBOX_STATUS_LABELS: Record<string, string> = {
   PENDING: "\u5f85\u5206\u6790",
-  ANALYZED: "\u5df2\u5206\u6790",
-  PROCESSED: "\u5df2\u8f49\u4efb\u52d9",
+  ANALYZED: "\u5f85\u6838\u51c6",
+  PROCESSED: "\u5df2\u5efa\u4efb\u52d9",
   DISMISSED: "\u5df2\u5ffd\u7565",
 };
 

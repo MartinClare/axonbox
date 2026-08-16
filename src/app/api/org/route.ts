@@ -45,6 +45,7 @@ export async function PATCH(req: NextRequest) {
         plan: String(body.plan || "ENTERPRISE"),
         allowSubInvite: body.allowSubInvite !== false,
         requireApproval: body.requireApproval !== false,
+        inboundEmail: body.inboundEmail ? String(body.inboundEmail).trim() : undefined,
       },
     });
   } else {
@@ -57,6 +58,10 @@ export async function PATCH(req: NextRequest) {
           body.allowSubInvite != null ? Boolean(body.allowSubInvite) : undefined,
         requireApproval:
           body.requireApproval != null ? Boolean(body.requireApproval) : undefined,
+        inboundEmail:
+          body.inboundEmail != null
+            ? String(body.inboundEmail).trim() || null
+            : undefined,
       },
     });
   }

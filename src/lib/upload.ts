@@ -21,6 +21,8 @@ function guessExt(mime: string) {
   if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
   if (mime.includes("webp")) return ".webp";
   if (mime.includes("pdf")) return ".pdf";
+  if (mime.includes("wordprocessingml") || mime.includes("msword")) return ".docx";
+  if (mime.includes("spreadsheetml") || mime.includes("excel")) return ".xlsx";
   if (mime.includes("audio")) return ".webm";
   return ".bin";
 }

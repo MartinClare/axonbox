@@ -47,6 +47,32 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json(message);
   }
 
+  if (body.action === "restore") {
+    const current = await prisma.inboxMessage.findUnique({ where: { id } });
+    if (!current) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (current.status !== "DISMISSED") {
+      return NextResponse.json({ error: "only dismissed messages can be restored" }, { status: 400 });
+    }
+    const message = await prisma.inboxMessage.update({
+      where: { id },
+      data: {
+        status: current.aiJson ? "ANALYZED" : "PENDING",
+        processedAt: null,
+      },
+    });
+    return NextResponse.json(message);
+  }
+
+  if (body.action === "delete") {
+    const current = await prisma.inboxMessage.findUnique({ where: { id } });
+    if (!current) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (current.status !== "DISMISSED") {
+      return NextResponse.json({ error: "only dismissed messages can be deleted" }, { status: 400 });
+    }
+    await prisma.inboxMessage.delete({ where: { id } });
+    return NextResponse.json({ ok: true, deleted: 1 });
+  }
+
   const data: Record<string, unknown> = {};
   if (body.status) data.status = body.status;
   if (body.subject !== undefined) data.subject = body.subject;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/session";
+import { uniqueInboundKey } from "@/lib/inbound-key";
 
 const ROLES = new Set(["OWNER", "ADMIN", "SUPERVISOR", "VIEWER", "SUBCONTRACTOR"]);
 
@@ -27,6 +28,9 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.title !== undefined) data.title = body.title?.trim() || null;
   if (body.company !== undefined) data.company = body.company?.trim() || null;
   if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
+  if (body.regenerateInboundKey === true) {
+    data.inboundKey = await uniqueInboundKey(id);
+  }
   if (body.password) {
     data.passwordHash = await bcrypt.hash(String(body.password), 10);
   }
@@ -44,6 +48,7 @@ export async function PATCH(req: Request, { params }: Params) {
         title: true,
         company: true,
         notes: true,
+        inboundKey: true,
         createdAt: true,
       },
     });

@@ -18,13 +18,15 @@ model User {
   title        String?
   company      String?
   notes        String?
+  inboundKey   String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  assignedCases  Case[]          @relation("CaseAssignee")
-  assignedTasks  Task[]          @relation("TaskAssignee")
-  caseEvents     CaseEvent[]
-  subcontractors Subcontractor[] @relation("SubUser")
+  assignedCases   Case[]          @relation("CaseAssignee")
+  assignedTasks   Task[]          @relation("TaskAssignee")
+  caseEvents      CaseEvent[]
+  subcontractors  Subcontractor[] @relation("SubUser")
+  forwardedInbox  InboxMessage[]  @relation("InboxForwardedBy")
 }
 
 model Project {
@@ -92,18 +94,25 @@ model Case {
 }
 
 model Task {
-  id           String    @id @default(cuid())
-  title        String
-  instructions String?
-  status       String    @default("PENDING")
-  dueAt        DateTime?
-  caseId       String
-  assigneeId   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  title         String
+  instructions  String?
+  status        String    @default("PENDING")
+  dueAt         DateTime?
+  caseId        String
+  assigneeId    String?
+  sortOrder     Int       @default(0)
+  labelsJson    String    @default("[]")
+  coverColor    String?
+  checklistJson String    @default("[]")
+  archived      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   case     Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
   assignee User? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  @@index([status, sortOrder])
 }
 
 model CaseEvent {
@@ -156,15 +165,17 @@ model InboxMessage {
   aiJson      String?
   receivedAt  DateTime  @default(now())
   processedAt DateTime?
-  projectId   String
-  evidenceId  String?   @unique
-  caseId      String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  projectId         String
+  evidenceId        String?   @unique
+  caseId            String?
+  forwardedByUserId String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  project  Project   @relation(fields: [projectId], references: [id])
-  evidence Evidence? @relation(fields: [evidenceId], references: [id])
-  case     Case?     @relation(fields: [caseId], references: [id])
+  project      Project   @relation(fields: [projectId], references: [id])
+  evidence     Evidence? @relation(fields: [evidenceId], references: [id])
+  case         Case?     @relation(fields: [caseId], references: [id])
+  forwardedBy  User?     @relation("InboxForwardedBy", fields: [forwardedByUserId], references: [id])
 
   @@index([status, receivedAt])
   @@index([channel])
@@ -244,6 +255,7 @@ model OrgSettings {
   plan             String   @default("ENTERPRISE")
   allowSubInvite   Boolean  @default(true)
   requireApproval  Boolean  @default(true)
+  inboundEmail     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

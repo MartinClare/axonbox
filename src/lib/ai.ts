@@ -203,19 +203,33 @@ export async function extractFromInput(input: {
   imageBase64?: string;
   imageMime?: string;
   filename?: string;
+  mode?: "site" | "email";
+  documentNote?: string;
 }): Promise<ExtractResult> {
   if (!hasAIKey()) {
     return mockExtract(input.text, input.filename);
   }
 
   const model = getAIModel();
+  const emailRules =
+    input.mode === "email"
+      ? `
+這是一封轉寄到 AxonBox 的郵件。必須以郵件主旨與正文判斷個案。
+- 不要把 PDF／Word 全文、條款或工作清單寫進 description 或 recommendation。
+- 若有「附件摘錄」，只用來確認這是什麼個案（標題、類別、地點、嚴重度）。最多在 description 加一句「附件為…」。
+- 不要執行或展開附件裡提到的所有事項。
+`
+      : "";
+  const docNote = input.documentNote
+    ? `\n附件摘錄（僅供判斷主題，勿寫進個案正文）：\n${input.documentNote}\n`
+    : "";
   try {
     const client = getAIClient();
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       {
         type: "text",
         text: `你是 AxonBox 資深工地巡檢／香港工程顧問 AI（熟悉 HyD XPMS／道路挖掘許可常識）。
-請分析現場照片／文字，找出安全漏洞、質量缺陷、進度線索，並在 recommendation 中提示是否可能涉及公共道路挖掘／XP／AN（Advance Notification）等合規動作（若無關則勿硬套）。
+${emailRules}請分析現場照片／文字，找出安全漏洞、質量缺陷、進度線索，並在 recommendation 中提示是否可能涉及公共道路挖掘／XP／AN（Advance Notification）等合規動作（若無關則勿硬套）。
 只回傳純 JSON，文字必須使用繁體中文：
 {
   "title":"一句話標題",
@@ -232,7 +246,7 @@ export async function extractFromInput(input: {
   "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}]
 }
 重點檢查：圍欄／防護、洞口未封、高空／PPE、鋼筋外露、裂縫、材料堆放、通道阻礙、明顯進度階段、臨時交通／圍板跡象。
-文字補充：${input.text || "(無)"}`,
+文字補充：${input.text || "(無)"}${docNote}`,
       },
     ];
     if (input.imageBase64) {

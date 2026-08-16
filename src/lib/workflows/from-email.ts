@@ -38,8 +38,14 @@ export async function workflowFromEmail(input: FromEmailInput) {
     throw new Error("body or image required");
   }
 
-  const attachmentMeta = (input.attachments || []).map((a) => a.name || "attachment");
-  if (input.imageBase64) attachmentMeta.push("inline-image");
+  const attachments = [...(input.attachments || [])];
+  if (input.imageBase64) {
+    attachments.push({
+      name: "inline-image",
+      mime: input.imageMime || "image/jpeg",
+      base64: input.imageBase64,
+    });
+  }
 
   const [message] = await persistNormalizedMessages(project.id, [
     {
@@ -47,7 +53,7 @@ export async function workflowFromEmail(input: FromEmailInput) {
       sender: input.from || "mail@unknown",
       subject: input.subject || "（无主题）",
       body,
-      attachments: attachmentMeta,
+      attachments,
       receivedAt: new Date(),
       rawPayload: {
         from: input.from,
@@ -90,11 +96,11 @@ export async function workflowFromEmail(input: FromEmailInput) {
     data: {
       status: "ANALYZED",
       aiJson: JSON.stringify(extract),
-      attachments: JSON.stringify(attachmentMeta),
+      attachments: JSON.stringify(attachments),
     },
   });
 
-  const autoProcess = input.autoProcess !== false;
+  const autoProcess = input.autoProcess === true;
   if (!autoProcess) {
     return {
       inboxId: message.id,

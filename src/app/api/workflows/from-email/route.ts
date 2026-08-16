@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         body: String(form.get("body") || form.get("text") || ""),
         imageBase64,
         imageMime,
-        autoProcess: String(form.get("autoProcess") || "true") !== "false",
+        autoProcess: String(form.get("autoProcess") || "") === "true",
       };
     } else {
       payload = await req.json();

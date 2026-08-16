@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { hasAIKey, getAIModel } from "@/lib/ai";
+import {
+  getInboundAddress,
+  getInboundWebhookUrl,
+  inboundImapConfigured,
+} from "@/lib/email-inbound";
 
 export async function GET() {
   const { error } = await requireSession();
   if (error) return error;
 
-  const [project, users, subcontractors, exports] = await Promise.all([
+  const [project, users, subcontractors, exports, org] = await Promise.all([
     prisma.project.findFirst(),
     prisma.user.findMany({
       select: {
@@ -24,6 +29,7 @@ export async function GET() {
       orderBy: { createdAt: "asc" },
     }),
     prisma.reportExport.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+    prisma.orgSettings.findFirst(),
   ]);
 
   return NextResponse.json({
@@ -34,6 +40,9 @@ export async function GET() {
     aiConfigured: hasAIKey(),
     aiModel: hasAIKey() ? getAIModel() : null,
     aiProvider: process.env.OPENROUTER_API_KEY ? "openrouter" : process.env.OPENAI_API_KEY ? "openai" : null,
+    inboundEmail: getInboundAddress(org?.inboundEmail) || null,
+    inboundImap: inboundImapConfigured(),
+    inboundWebhookUrl: getInboundWebhookUrl(),
   });
 }
 

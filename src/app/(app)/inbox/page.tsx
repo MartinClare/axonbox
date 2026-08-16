@@ -12,6 +12,9 @@ import {
   Trash2,
   Send,
   ChevronDown,
+  Copy,
+  RefreshCw,
+  Undo2,
 } from "lucide-react";
 import {
   CHANNEL_LABELS,
@@ -27,6 +30,9 @@ type InboxRow = {
   id: string;
   channel: string;
   sender: string;
+  mailbox?: string | null;
+  forwardedByName?: string | null;
+  fromEmail?: string | null;
   subject: string | null;
   body: string;
   status: string;
@@ -60,12 +66,21 @@ export default function InboxPage() {
   const [counts, setCounts] = useState({ pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
   const [selected, setSelected] = useState<InboxRow | null>(null);
   const [extract, setExtract] = useState<ExtractResult | null>(null);
-  const [filter, setFilter] = useState<string>("PENDING");
+  const [filter, setFilter] = useState<string>("ANALYZED");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [showImport, setShowImport] = useState(true);
+  const [showImport, setShowImport] = useState(false);
+  const [inbound, setInbound] = useState<{
+    address: string | null;
+    domain?: string | null;
+    key?: string | null;
+    webhookConfigured: boolean;
+    imapConfigured: boolean;
+    resendConfigured?: boolean;
+  } | null>(null);
 
-  const [channel, setChannel] = useState<"EMAIL" | "WHATSAPP" | "WECHAT" | "MANUAL">("EMAIL");
+  const [channel, setChannel] = useState<"EMAIL" | "WHATSAPP" | "MANUAL">("EMAIL");
   const [from, setFrom] = useState("");
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
@@ -75,6 +90,14 @@ export default function InboxPage() {
     const res = await apiFetch<{
       messages?: InboxRow[];
       counts?: typeof counts;
+      inbound?: {
+        address: string | null;
+        domain?: string | null;
+        key?: string | null;
+        webhookConfigured: boolean;
+        imapConfigured: boolean;
+        resendConfigured?: boolean;
+      };
     }>(`/api/inbox${q}`);
     if (!res.ok) {
       setRows([]);
@@ -82,6 +105,7 @@ export default function InboxPage() {
     }
     setRows(res.data?.messages || []);
     setCounts(res.data?.counts || { pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
+    if (res.data?.inbound) setInbound(res.data.inbound);
   }, [filter]);
 
   useEffect(() => {
@@ -113,7 +137,7 @@ export default function InboxPage() {
         flash(data.error || "工作流失敗");
         return;
       }
-      flash(data.message || "已轉事件與任務");
+      flash(data.message || "已核准並建立任務");
       setText("");
       setSubject("");
       if (data.case?.id) {
@@ -141,8 +165,8 @@ export default function InboxPage() {
     const data = await res.json();
     setText("");
     setSubject("");
-    flash(`已收入 ${data.count} 則訊息`);
-    setFilter("PENDING");
+    flash(`已收入並產生建議個案 ${data.count} 則`);
+    setFilter("ANALYZED");
     setShowImport(false);
     await load();
   }
@@ -194,7 +218,7 @@ export default function InboxPage() {
       return;
     }
     const data = await res.json();
-    flash("已產生事件與任務");
+    flash("已核准：已建立事件與跟進任務");
     if (data.case?.id) {
       router.push(`/cases/${data.case.id}`);
       return;
@@ -215,10 +239,98 @@ export default function InboxPage() {
     await load();
   }
 
+  function setFilterTab(key: string) {
+    setFilter(key);
+    setChecked(new Set());
+  }
+
+  function toggleChecked(id: string, on: boolean) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(on: boolean) {
+    setChecked(on ? new Set(rows.map((r) => r.id)) : new Set());
+  }
+
+  function clearSelectionIfGone(ids: string[]) {
+    const gone = new Set(ids);
+    if (selected && gone.has(selected.id)) {
+      setSelected(null);
+      setExtract(null);
+    }
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+  }
+
+  async function bulkRestore(ids: string[]) {
+    if (ids.length === 0) return;
+    setBusy(true);
+    const res = await apiFetch<{ restored?: number }>("/api/inbox", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "restore", ids }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      flash(res.error || "恢復失敗");
+      return;
+    }
+    clearSelectionIfGone(ids);
+    flash(`已恢復 ${res.data?.restored || ids.length} 則`);
+    await load();
+  }
+
+  async function bulkDelete(ids: string[]) {
+    if (ids.length === 0) return;
+    if (!window.confirm(`確定永久刪除 ${ids.length} 則已忽略訊息？此操作無法復原。`)) return;
+    setBusy(true);
+    const res = await apiFetch<{ deleted?: number }>("/api/inbox", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", ids }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      flash(res.error || "刪除失敗");
+      return;
+    }
+    clearSelectionIfGone(ids);
+    flash(`已刪除 ${res.data?.deleted || ids.length} 則`);
+    await load();
+  }
+
+  async function copyAddress() {
+    if (!inbound?.address) return;
+    await navigator.clipboard.writeText(inbound.address);
+    flash("已複製，請貼到郵件 To");
+  }
+
+  async function syncMail() {
+    setBusy(true);
+    const res = await fetch("/api/connectors/email/sync", { method: "POST" });
+    setBusy(false);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flash(data.error || "收取失敗");
+      return;
+    }
+    flash(`已收取 ${data.pulled || 0} 封，建議個案 ${data.proposed || 0} 則`);
+    setFilter("ANALYZED");
+    await load();
+  }
+
   const filters = [
+    ["待核准", counts.analyzed, "ANALYZED"],
     ["待分析", counts.pending, "PENDING"],
-    ["已分析", counts.analyzed, "ANALYZED"],
-    ["已轉任務", counts.processed, "PROCESSED"],
+    ["已建任務", counts.processed, "PROCESSED"],
     ["已忽略", counts.dismissed, "DISMISSED"],
   ] as const;
 
@@ -227,18 +339,50 @@ export default function InboxPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="axon-title text-2xl font-semibold">訊息收件</h1>
-          <p className="mt-1 text-sm axon-muted">貼上內容 → AI → 事件／任務</p>
+          <p className="mt-1 text-sm axon-muted">
+            轉寄郵件到專用信箱 → AI 建議個案 → 核准後建立任務
+          </p>
         </div>
         {msg && (
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700">{msg}</span>
         )}
       </div>
 
+      <section className="axon-panel space-y-3 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-[var(--axon-ink)]">你的轉寄地址</div>
+            <p className="mt-1 text-xs text-slate-500">
+              把這組地址貼到郵件的 To。@ 前是你的保密代號，不要外傳或改用容易猜的名稱。
+            </p>
+          </div>
+          {(inbound?.imapConfigured || inbound?.resendConfigured) && (
+            <button disabled={busy} onClick={syncMail} className="axon-btn axon-btn-ghost">
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              收取新郵件
+            </button>
+          )}
+        </div>
+        {inbound?.address ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-[var(--axon-ink)]">
+              {inbound.address}
+            </code>
+            <button type="button" onClick={copyAddress} className="axon-btn axon-btn-ghost">
+              <Copy size={14} />
+              複製
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-amber-700">尚未設定轉寄信箱。請到人員名冊確認你的專屬代號。</p>
+        )}
+      </section>
+
       <div className="flex flex-wrap gap-1.5">
         {filters.map(([label, n, key]) => (
           <button
             key={key}
-            onClick={() => setFilter(key)}
+            onClick={() => setFilterTab(key)}
             className={cn(
               "rounded-full px-3.5 py-2 text-sm transition",
               filter === key
@@ -268,7 +412,7 @@ export default function InboxPage() {
             {showImport && (
               <div className="space-y-3 border-t border-[var(--axon-line)] px-4 pb-4 pt-3">
                 <div className="flex flex-wrap gap-1 rounded-xl bg-slate-50 p-1">
-                  {(["EMAIL", "WHATSAPP", "WECHAT", "MANUAL"] as const).map((c) => (
+                  {(["EMAIL", "WHATSAPP", "MANUAL"] as const).map((c) => (
                     <button
                       key={c}
                       onClick={() => setChannel(c)}
@@ -306,9 +450,7 @@ export default function InboxPage() {
                   placeholder={
                     channel === "WHATSAPP"
                       ? "[10:21] 現場主管：B區五樓圍欄未裝"
-                      : channel === "WECHAT"
-                        ? "張工：洞口未封，有墜落風險"
-                        : "貼上郵件正文或現場說明…"
+                      : "貼上郵件正文或現場說明…"
                   }
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -329,7 +471,7 @@ export default function InboxPage() {
                     className="axon-btn axon-btn-ok w-full"
                   >
                     <Sparkles size={15} />
-                    一鍵轉事件＋任務
+                    略過核准，直接建任務
                   </button>
                 )}
               </div>
@@ -337,9 +479,42 @@ export default function InboxPage() {
           </section>
 
           <section className="axon-panel overflow-hidden">
-            <div className="border-b border-[var(--axon-line)] px-4 py-3 text-sm font-semibold">
-              收件列表
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--axon-line)] px-4 py-3">
+              <div className="text-sm font-semibold">收件列表</div>
+              {filter === "DISMISSED" && rows.length > 0 && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={rows.length > 0 && rows.every((r) => checked.has(r.id))}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                  />
+                  全選
+                </label>
+              )}
             </div>
+            {filter === "DISMISSED" && checked.size > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-[var(--axon-line)] bg-slate-50/80 px-4 py-2.5">
+                <span className="mr-auto text-xs text-slate-500">已選 {checked.size} 則</span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => bulkRestore([...checked])}
+                  className="axon-btn axon-btn-ghost min-h-9 px-3 py-1.5 text-xs"
+                >
+                  <Undo2 size={13} />
+                  恢復
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => bulkDelete([...checked])}
+                  className="axon-btn axon-btn-ghost min-h-9 px-3 py-1.5 text-xs text-rose-700"
+                >
+                  <Trash2 size={13} />
+                  刪除
+                </button>
+              </div>
+            )}
             <div className="max-h-[460px] divide-y divide-slate-100 overflow-y-auto">
               {rows.length === 0 && (
                 <p className="px-4 py-10 text-center text-sm text-slate-400">暫無訊息</p>
@@ -347,31 +522,51 @@ export default function InboxPage() {
               {rows.map((row) => {
                 const Icon = channelIcon[row.channel as keyof typeof channelIcon] || Inbox;
                 return (
-                  <button
+                  <div
                     key={row.id}
-                    onClick={() => selectRow(row)}
                     className={cn(
-                      "flex w-full gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50",
+                      "flex items-stretch transition hover:bg-slate-50",
                       selected?.id === row.id && "bg-slate-50",
                     )}
                   >
-                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[var(--axon-steel)]">
-                      <Icon size={15} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-[var(--axon-ink)]">
-                          {row.subject || row.body.slice(0, 40)}
-                        </span>
-                        <span className="shrink-0 text-[10px] text-slate-400">
-                          {INBOX_STATUS_LABELS[row.status] || row.status}
-                        </span>
+                    {filter === "DISMISSED" && (
+                      <label
+                        className="flex cursor-pointer items-center px-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked.has(row.id)}
+                          onChange={(e) => toggleChecked(row.id, e.target.checked)}
+                        />
+                      </label>
+                    )}
+                    <button
+                      onClick={() => selectRow(row)}
+                      className="flex min-w-0 flex-1 gap-3 py-3.5 pr-4 text-left"
+                    >
+                      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[var(--axon-steel)]">
+                        <Icon size={15} />
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-slate-500">
-                        {CHANNEL_LABELS[row.channel]} · {row.sender}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium text-[var(--axon-ink)]">
+                            {row.subject || row.body.slice(0, 40)}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-slate-400">
+                            {INBOX_STATUS_LABELS[row.status] || row.status}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-slate-500">
+                          {CHANNEL_LABELS[row.channel]}
+                          {row.forwardedByName || row.mailbox
+                            ? ` · ${row.forwardedByName || row.mailbox}`
+                            : ""}{" "}
+                          · {row.fromEmail || row.sender}
+                        </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -382,8 +577,12 @@ export default function InboxPage() {
           {!selected ? (
             <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
               <Inbox size={22} className="mb-3 text-slate-300" />
-              <p className="text-sm font-medium text-slate-600">選一則訊息開始處理</p>
-              <p className="axon-muted mt-1 text-xs">分析後可一鍵產生事件與任務</p>
+              <p className="text-sm font-medium text-slate-600">
+                {filter === "DISMISSED" ? "選一則已忽略訊息，或勾選後批量處理" : "選一則建議個案開始核准"}
+              </p>
+              <p className="axon-muted mt-1 text-xs">
+                {filter === "DISMISSED" ? "可恢復回待核准，或永久刪除" : "核准後會建立事件與跟進任務"}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -392,7 +591,13 @@ export default function InboxPage() {
                   <span className="rounded-md bg-slate-100 px-2 py-0.5">
                     {CHANNEL_LABELS[selected.channel]}
                   </span>
-                  <span>{selected.sender}</span>
+                  {(selected.forwardedByName || selected.mailbox) && (
+                    <span className="rounded-md bg-blue-50 px-2 py-0.5 text-blue-700">
+                      {selected.forwardedByName || selected.mailbox}
+                      {selected.mailbox ? ` · ${selected.mailbox}` : ""}
+                    </span>
+                  )}
+                  <span>{selected.fromEmail || selected.sender}</span>
                   <span>{new Date(selected.receivedAt).toLocaleString("zh-HK")}</span>
                 </div>
                 {selected.subject && (
@@ -406,18 +611,41 @@ export default function InboxPage() {
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
-                <button disabled={busy} onClick={analyze} className="axon-btn axon-btn-primary">
-                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  AI 分析
-                </button>
-                <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
-                  <CheckCircle2 size={14} />
-                  轉事件
-                </button>
-                <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
-                  <Trash2 size={14} />
-                  忽略
-                </button>
+                {selected.status === "DISMISSED" ? (
+                  <>
+                    <button
+                      disabled={busy}
+                      onClick={() => bulkRestore([selected.id])}
+                      className="axon-btn axon-btn-primary"
+                    >
+                      <Undo2 size={14} />
+                      恢復
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => bulkDelete([selected.id])}
+                      className="axon-btn axon-btn-ghost text-rose-700 sm:col-span-2"
+                    >
+                      <Trash2 size={14} />
+                      永久刪除
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button disabled={busy} onClick={analyze} className="axon-btn axon-btn-primary">
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      AI 分析
+                    </button>
+                    <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
+                      <CheckCircle2 size={14} />
+                      核准並建立任務
+                    </button>
+                    <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
+                      <Trash2 size={14} />
+                      忽略
+                    </button>
+                  </>
+                )}
               </div>
 
               {selected.case && (

@@ -1,5 +1,10 @@
+import { randomBytes } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+
+function generateInboundKey() {
+  return randomBytes(16).toString("hex");
+}
 
 const prisma = new PrismaClient();
 
@@ -231,6 +236,7 @@ async function main() {
       phone: "9123 0001",
       title: "\u5730\u76e4\u7d93\u7406",
       company: "AXON Main Contractor",
+      inboundKey: generateInboundKey(),
     },
   });
   const supervisor = await prisma.user.create({
@@ -242,6 +248,7 @@ async function main() {
       phone: "9123 0002",
       title: "\u73fe\u5834\u4e3b\u7ba1",
       company: "AXON Main Contractor",
+      inboundKey: generateInboundKey(),
     },
   });
   const subUser = await prisma.user.create({
@@ -253,6 +260,7 @@ async function main() {
       phone: "9123 0003",
       title: "\u5206\u5224\u8ca0\u8cac\u4eba",
       company: T.sub1,
+      inboundKey: generateInboundKey(),
     },
   });
 

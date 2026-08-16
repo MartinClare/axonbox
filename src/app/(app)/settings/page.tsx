@@ -27,7 +27,12 @@ type SettingsData = {
 };
 
 type OrgInfo = {
-  org: { name: string; plan: string; allowSubInvite: boolean; requireApproval: boolean };
+  org: {
+    name: string;
+    plan: string;
+    allowSubInvite: boolean;
+    requireApproval: boolean;
+  };
   myRole: string;
   myPermissions: string[];
   roleLabels: Record<string, string>;

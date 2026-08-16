@@ -12,13 +12,21 @@
 
 export type InboxChannel = "WHATSAPP" | "EMAIL" | "WECHAT" | "MANUAL";
 
+export type InboxAttachment =
+  | string
+  | {
+      name?: string;
+      mime?: string;
+      base64?: string;
+    };
+
 export type NormalizedInboxMessage = {
   channel: InboxChannel;
   externalId?: string;
   sender: string;
   subject?: string;
   body: string;
-  attachments?: string[];
+  attachments?: InboxAttachment[];
   receivedAt?: Date;
   rawPayload?: unknown;
 };
@@ -39,7 +47,13 @@ export function connectorConfigured(channel: InboxChannel): boolean {
     case "WHATSAPP":
       return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
     case "EMAIL":
-      return Boolean(process.env.GMAIL_REFRESH_TOKEN || process.env.MS_GRAPH_TOKEN);
+      return Boolean(
+        process.env.INBOUND_EMAIL_ADDRESS ||
+          process.env.INBOUND_WEBHOOK_SECRET ||
+          process.env.IMAP_HOST ||
+          process.env.GMAIL_REFRESH_TOKEN ||
+          process.env.MS_GRAPH_TOKEN,
+      );
     case "WECHAT":
       return Boolean(process.env.WECHAT_APP_ID && process.env.WECHAT_APP_SECRET);
     default:

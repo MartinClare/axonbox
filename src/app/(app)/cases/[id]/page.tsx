@@ -44,6 +44,7 @@ type CaseDetail = {
     id: string;
     title: string;
     type: string;
+    mime?: string | null;
     filePath: string | null;
     chatText: string | null;
   }>;
@@ -318,20 +319,34 @@ export default function CaseDetailPage() {
 
       {tab === "files" && (
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {item.evidence.map((e) => (
+          {item.evidence.map((e) => {
+            const href = mediaUrl(e.filePath);
+            const image = Boolean(e.mime?.startsWith("image/") && href);
+            return (
             <div key={e.id} className="rounded-xl border border-slate-200 bg-white p-3">
-              {mediaUrl(e.filePath) ? (
+              {image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={mediaUrl(e.filePath)!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
+                <img src={href!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
               ) : (
-                <div className="mb-2 flex h-36 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">
-                  {e.type}
+                <div className="mb-2 flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 text-center text-xs text-slate-500">
+                  <span>{e.type === "CHAT" ? "郵件正文" : e.mime || e.type}</span>
+                  {href && e.type !== "CHAT" && (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[var(--axon-blue)]"
+                    >
+                      開啟附件
+                    </a>
+                  )}
                 </div>
               )}
               <div className="text-sm font-medium">{e.title}</div>
               {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
             </div>
-          ))}
+            );
+          })}
           {item.evidence.length === 0 && (
             <p className="text-sm text-slate-400">尚無附件</p>
           )}

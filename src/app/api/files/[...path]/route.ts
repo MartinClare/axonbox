@@ -6,6 +6,7 @@ import { getStoredFile, objectKeyFromPath } from "@/lib/storage";
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".pdf": "application/pdf",
+  ".doc": "application/msword",
   ".docx":
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -1,81 +1,83 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { persistNormalizedMessages } from "@/lib/inbox";
-import { workflowFromEmail } from "@/lib/workflows/from-email";
-import type { NormalizedInboxMessage } from "@/lib/connectors";
+import { ingestAndPropose, processInboxToEventTask } from "@/lib/inbox";
+import {
+  inboundToNormalized,
+  mailboxAlias,
+  parseInboundRequest,
+  verifyInboundSecret,
+} from "@/lib/email-inbound";
+import { resolveUserByMailbox } from "@/lib/inbound-key";
+
+export const maxDuration = 60;
 
 /**
- * Email inbound webhook
- * Demo: POST { from, subject, body, imageBase64?, autoProcess? }
+ * Public inbound mailbox webhook.
+ * Point SendGrid / Mailgun / Cloudflare / Resend / any email-to-webhook
+ * at this URL. Default: persist + LLM proposed case. Approval creates the task.
  *
- * Set EMAIL_AUTO_WORKFLOW=true to always AI→Event→Task.
- * Or pass autoProcess:true in body.
+ * POST /api/connectors/email/webhook?token=INBOUND_WEBHOOK_SECRET
  */
+export async function GET(req: Request) {
+  if (!verifyInboundSecret(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  return NextResponse.json({ ok: true, inbound: true });
+}
+
 export async function POST(req: Request) {
+  if (!verifyInboundSecret(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const project = await prisma.project.findFirst();
   if (!project) return NextResponse.json({ error: "No project" }, { status: 400 });
 
-  const payload = await req.json().catch(() => ({}));
-
-  const auto =
-    payload.autoProcess === true ||
-    process.env.EMAIL_AUTO_WORKFLOW === "true";
-
-  if (auto && (payload.body || payload.text || payload.subject || payload.imageBase64)) {
-    const admin = await prisma.user.findFirst({
-      where: { role: "ADMIN" },
-      orderBy: { createdAt: "asc" },
-    });
-    if (!admin) {
-      return NextResponse.json({ error: "No admin user for actor" }, { status: 400 });
-    }
-    try {
-      const result = await workflowFromEmail({
-        from: payload.from,
-        subject: payload.subject,
-        body: payload.body || payload.text,
-        imageBase64: payload.imageBase64,
-        imageMime: payload.imageMime,
-        attachments: payload.attachments,
-        autoProcess: true,
-        userId: admin.id,
-      });
-      return NextResponse.json({ ok: true, mode: "workflow", ...result });
-    } catch (e) {
-      return NextResponse.json(
-        { error: e instanceof Error ? e.message : "workflow failed" },
-        { status: 400 },
-      );
-    }
-  }
-
-  const messages: NormalizedInboxMessage[] = [];
-  if (payload.from || payload.subject || payload.body || payload.text) {
-    messages.push({
-      channel: "EMAIL",
-      externalId: payload.id || payload.messageId,
-      sender: payload.from || "mail@unknown",
-      subject: payload.subject || "（无主题）",
-      body: payload.body || payload.text || "",
-      attachments: payload.attachments || [],
-      receivedAt: payload.receivedAt ? new Date(payload.receivedAt) : new Date(),
-      rawPayload: payload,
-    });
-  }
-
-  if (!messages.length) {
+  const email = await parseInboundRequest(req);
+  if (!email) {
     return NextResponse.json({
       ok: true,
       ingested: 0,
-      hint: "POST { from, subject, body, autoProcess:true } for AI workflow",
+      hint: "POST { from, subject, body } or provider form payload",
     });
   }
 
-  const created = await persistNormalizedMessages(project.id, messages);
+  const mailbox = mailboxAlias(email.to);
+  const inboundUser = await resolveUserByMailbox(mailbox || email.to);
+  if (!inboundUser) {
+    console.warn("[email.webhook] reject unknown mailbox", email.to || mailbox || "(empty)");
+    return NextResponse.json({
+      ok: true,
+      ingested: 0,
+      rejected: "unknown_mailbox",
+      mailbox: mailbox || email.to || "",
+    });
+  }
+
+  const autoProcess = process.env.EMAIL_AUTO_WORKFLOW === "true";
+  const proposed = await ingestAndPropose(project.id, [inboundToNormalized(email)]);
+  const first = proposed[0];
+
+  if (autoProcess && first?.message?.id) {
+    const admin = await prisma.user.findFirst({
+      where: { role: { in: ["ADMIN", "OWNER"] } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (admin) {
+      const result = await processInboxToEventTask({
+        id: first.message.id,
+        userId: admin.id,
+        createTask: true,
+      });
+      return NextResponse.json({ ok: true, mode: "workflow", ...result });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
-    mode: "inbox",
-    ingested: created.length,
-    ids: created.map((c) => c.id),
+    mode: "proposed",
+    ingested: proposed.length,
+    ids: proposed.map((p) => p.message?.id).filter(Boolean),
+    extract: first?.extract || null,
   });
 }

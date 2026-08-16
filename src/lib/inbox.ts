@@ -8,6 +8,20 @@ import {
   type InboxChannel,
   type NormalizedInboxMessage,
 } from "@/lib/connectors";
+import { mailboxAlias } from "@/lib/email-inbound";
+import { resolveUserByMailbox } from "@/lib/inbound-key";
+import {
+  emailIsThin,
+  emailRefersToAttachment,
+  excerptFromDocument,
+  evidenceTypeFor,
+  isDocumentFile,
+  isImageFile,
+  parseInboxAttachments,
+} from "@/lib/inbound-files";
+import { saveBuffer } from "@/lib/upload";
+import { randomUUID } from "crypto";
+import path from "path";
 
 export { listConnectorStatus };
 
@@ -24,24 +38,76 @@ export async function persistNormalizedMessages(
 ) {
   const created = [];
   for (const m of messages) {
-    if (!m.body?.trim() && !m.subject?.trim()) continue;
+    if (!m.body?.trim() && !m.subject?.trim() && !(m.attachments || []).length) continue;
+    if (m.externalId) {
+      const existing = await prisma.inboxMessage.findFirst({
+        where: { externalId: m.externalId, channel: m.channel },
+      });
+      if (existing) {
+        created.push(existing);
+        continue;
+      }
+    }
+    const raw =
+      m.rawPayload && typeof m.rawPayload === "object"
+        ? (m.rawPayload as Record<string, unknown>)
+        : {};
+    const mailbox = String(raw.mailbox || mailboxAlias(String(raw.to || "")) || "");
+    const forwardedBy = await resolveUserByMailbox(mailbox || String(raw.to || ""));
+    if (m.channel === "EMAIL" && !forwardedBy) {
+      console.warn("[inbox] reject unknown mailbox", mailbox || raw.to || "(empty)");
+      continue;
+    }
     const row = await prisma.inboxMessage.create({
       data: {
         channel: m.channel,
         externalId: m.externalId,
-        sender: m.sender,
+        sender: forwardedBy?.name || m.sender,
         subject: m.subject || null,
         body: m.body || "",
-        rawPayload: m.rawPayload ? JSON.stringify(m.rawPayload) : null,
+        rawPayload: JSON.stringify({
+          ...raw,
+          from: m.sender,
+          mailbox: raw.mailbox || mailboxAlias(String(raw.to || "")),
+          forwardedByUserId: forwardedBy?.id || null,
+          forwardedByName: forwardedBy?.name || null,
+        }),
         attachments: JSON.stringify(m.attachments || []),
         receivedAt: m.receivedAt || new Date(),
         projectId,
+        forwardedByUserId: forwardedBy?.id || null,
         status: "PENDING",
       },
     });
     created.push(row);
   }
   return created;
+}
+
+/** Persist inbound mail and run LLM → proposed case (no task until approved). */
+export async function ingestAndPropose(
+  projectId: string,
+  messages: NormalizedInboxMessage[],
+) {
+  const created = await persistNormalizedMessages(projectId, messages);
+  const proposed = [];
+  for (const row of created) {
+    if (row.status === "PROCESSED" || row.status === "DISMISSED") {
+      proposed.push({ message: row, extract: row.aiJson ? JSON.parse(row.aiJson) : null });
+      continue;
+    }
+    if (row.status === "ANALYZED" && row.aiJson) {
+      proposed.push({ message: row, extract: JSON.parse(row.aiJson) });
+      continue;
+    }
+    try {
+      proposed.push(await analyzeInboxMessage(row.id));
+    } catch (err) {
+      console.error("inbox propose failed", err);
+      proposed.push({ message: row, extract: null });
+    }
+  }
+  return proposed;
 }
 
 export async function ingestPaste(opts: {
@@ -66,42 +132,51 @@ export async function analyzeInboxMessage(
   const text = [message.subject ? `主题：${message.subject}` : "", message.body]
     .filter(Boolean)
     .join("\n");
+  const files = parseInboxAttachments(message.attachments);
+  const photo = files.find(isImageFile);
+  const docs = files.filter(isDocumentFile);
 
   let imageBase64 = opts?.imageBase64;
   let imageMime = opts?.imageMime || "image/jpeg";
-
-  // Attachments may store data-URL or {base64,mime} JSON
-  if (!imageBase64) {
-    try {
-      const atts = JSON.parse(message.attachments || "[]");
-      if (Array.isArray(atts)) {
-        for (const a of atts) {
-          if (typeof a === "object" && a?.base64) {
-            imageBase64 = String(a.base64).replace(/^data:[^;]+;base64,/, "");
-            imageMime = a.mime || imageMime;
-            break;
-          }
-          if (typeof a === "string" && a.startsWith("data:image")) {
-            const m = a.match(/^data:([^;]+);base64,(.+)$/);
-            if (m) {
-              imageMime = m[1];
-              imageBase64 = m[2];
-              break;
-            }
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
+  if (!imageBase64 && photo) {
+    imageBase64 = photo.base64;
+    imageMime = photo.mime || imageMime;
   }
 
-  const extract = await extractFromInput({
+  let extract = await extractFromInput({
     text,
     imageBase64,
     imageMime,
     filename: `${message.channel}-${message.sender}`,
+    mode: message.channel === "EMAIL" ? "email" : "site",
   });
+
+  const needDoc =
+    message.channel === "EMAIL" &&
+    docs.length > 0 &&
+    (emailIsThin(text) ||
+      emailRefersToAttachment(text) ||
+      extract.confidence < 0.45 ||
+      extract.mock);
+
+  if (needDoc) {
+    const excerpts: string[] = [];
+    for (const doc of docs.slice(0, 2)) {
+      const buf = Buffer.from(doc.base64, "base64");
+      const excerpt = await excerptFromDocument(buf, doc);
+      if (excerpt) excerpts.push(`【${doc.name}】\n${excerpt}`);
+    }
+    if (excerpts.length) {
+      extract = await extractFromInput({
+        text,
+        imageBase64,
+        imageMime,
+        filename: `${message.channel}-${message.sender}`,
+        mode: "email",
+        documentNote: excerpts.join("\n\n"),
+      });
+    }
+  }
 
   const updated = await prisma.inboxMessage.update({
     where: { id },
@@ -168,7 +243,7 @@ export async function processInboxToEventTask(opts: {
       severity: extract.severity || "MEDIUM",
       location: extract.location || "待确认",
       recommendation: extract.recommendation,
-      sourceType: "CHAT",
+      sourceType: message.channel === "EMAIL" ? "EMAIL" : "CHAT",
       status: "OPEN",
       projectId: message.projectId,
       assigneeId: opts.assigneeId || opts.userId,
@@ -182,7 +257,7 @@ export async function processInboxToEventTask(opts: {
     data: {
       caseId: created.id,
       type: "CREATE",
-      note: `由${message.channel}收件建立事件`,
+      note: `由${message.channel}收件核准後建立事件與任務`,
       actorId,
     },
   });
@@ -191,6 +266,36 @@ export async function processInboxToEventTask(opts: {
     where: { id: evidence.id },
     data: { caseId: created.id },
   });
+
+  const files = parseInboxAttachments(message.attachments);
+  for (const file of files) {
+    try {
+      const ext = path.extname(file.name) || "";
+      const filename = `${Date.now()}-${randomUUID().slice(0, 8)}${ext || ""}`;
+      const saved = await saveBuffer(
+        Buffer.from(file.base64, "base64"),
+        filename,
+        "evidence",
+        file.mime,
+      );
+      await prisma.evidence.create({
+        data: {
+          type: evidenceTypeFor(file),
+          title: file.name,
+          filePath: saved.filePath,
+          mime: file.mime,
+          source: evidenceSource(message.channel),
+          status: "IN_PROGRESS",
+          category: extract.category,
+          severity: extract.severity,
+          projectId: message.projectId,
+          caseId: created.id,
+        },
+      });
+    } catch (err) {
+      console.error("[inbox] attach file failed", file.name, err);
+    }
+  }
 
   let task = null;
   if (opts.createTask !== false) {
