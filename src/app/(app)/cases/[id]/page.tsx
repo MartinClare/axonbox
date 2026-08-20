@@ -21,7 +21,7 @@ import {
 } from "@/lib/case-loop";
 import { CaseLoopNextPanel, CaseLoopStepper } from "@/components/CaseLoopStepper";
 import { useI18n } from "@/components/I18nProvider";
-import { splitSourcePack } from "@/lib/inbox-source";
+import { splitSourcePack } from "@/lib/inbox-source-pack";
 
 type CaseDetail = {
   id: string;

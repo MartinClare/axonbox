@@ -107,32 +107,35 @@ async function downloadYCloudMedia(
   media: YCloudMedia | undefined,
   fallbackName: string,
 ): Promise<InboxAttachment | null> {
-  if (!media?.link) return null;
   const apiKey = process.env.YCLOUD_API_KEY?.trim();
   if (!apiKey) {
     console.warn("[whatsapp] YCLOUD_API_KEY missing; skip media download");
     return null;
   }
+  const link =
+    media?.link ||
+    (media?.id ? `https://api.ycloud.com/v2/whatsapp/media/download/${media.id}` : "");
+  if (!link) return null;
 
   try {
-    const res = await fetch(media.link, {
+    const res = await fetch(link, {
       headers: { "X-API-Key": apiKey },
     });
     if (!res.ok) {
-      console.error("[whatsapp] media download failed", res.status, media.link);
+      console.error("[whatsapp] media download failed", res.status, media?.id || link);
       return null;
     }
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > MAX_FILE_BYTES) {
-      console.warn("[whatsapp] media too large", buf.length);
+      console.warn("[whatsapp] media too large", buf.length, fallbackName);
       return null;
     }
     const mime =
-      media.mime_type ||
-      media.mimeType ||
+      media?.mime_type ||
+      media?.mimeType ||
       res.headers.get("content-type") ||
       "application/octet-stream";
-    const name = media.filename || fallbackName;
+    const name = media?.filename || fallbackName;
     return { name, mime, base64: buf.toString("base64") };
   } catch (err) {
     console.error("[whatsapp] media download error", err);
@@ -226,7 +229,7 @@ export async function parseYCloudInboundEvent(
       document.filename || `doc-${document.id || "wa"}.pdf`,
     );
     if (file) attachments.push(file);
-    if (!document.caption && !file) bodyParts.push("[文件]");
+    else bodyParts.push(`[文件] ${document.filename || ""}`.trim());
   }
 
   if (inbound.video) {
