@@ -206,7 +206,7 @@ export default function InboxPage() {
       return;
     }
 
-    if (!firstPaint && arrived.length && filter !== "ANALYZED") {
+    if (!firstPaint && arrived.length) {
       setMsg(t("inbox.newArrived", { n: arrived.length }));
       window.setTimeout(() => setMsg(""), 2500);
     }
