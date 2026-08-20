@@ -49,3 +49,4 @@ yarn-error.log*
 next-env.d.ts
 .cursor/
 logs/
+tmp-real-case-pack.pdf
