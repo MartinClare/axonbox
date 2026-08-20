@@ -31,6 +31,7 @@ import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 import { MinutesUploadGroup } from "@/components/MinutesLangSwitch";
 import { useI18n } from "@/components/I18nProvider";
 import { FilePreview } from "@/components/FilePreview";
+import { resolveInboxActionItems } from "@/lib/inbox-actions";
 
 type InboxFile = {
   name: string;
@@ -69,6 +70,7 @@ type ExtractResult = {
   findings?: Array<{ label: string; detail: string; severity: string }>;
   siteSummary?: string;
   mock?: boolean;
+  actionItems?: Array<{ title: string; detail?: string }>;
 };
 
 const channelIcon = {
@@ -117,6 +119,7 @@ export default function InboxPage() {
   const [counts, setCounts] = useState({ pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
   const [selected, setSelected] = useState<InboxRow | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [splitTasks, setSplitTasks] = useState(true);
   const [extract, setExtract] = useState<ExtractResult | null>(null);
   const [filter, setFilter] = useState<string>("ANALYZED");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -262,6 +265,13 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selected) return;
+    const n = resolveInboxActionItems(extract, selected.body).length;
+    setSplitTasks(n > 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, selected?.aiJson]);
+
+  useEffect(() => {
+    if (!selected) return;
     const files = selected.files || [];
     if ((selected.fileCount || 0) === 0) return;
     if (files.length >= (selected.fileCount || 0) && files.every((f) => f.url || f.dataUrl)) return;
@@ -383,11 +393,16 @@ export default function InboxPage() {
 
   async function processToTask() {
     if (!selected) return;
+    const points = resolveInboxActionItems(extract, selected.body);
     setBusy(true);
     const res = await fetch(`/api/inbox/${selected.id}/process`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ createTask: true }),
+      body: JSON.stringify({
+        createTask: true,
+        splitTasks: splitTasks && points.length > 1,
+        actionItems: points,
+      }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -396,11 +411,29 @@ export default function InboxPage() {
     }
     const data = await res.json();
     flash(t("inbox.approvedCase"));
-    if (data.case?.id) {
-      router.push(`/cases/${data.case.id}`);
+    skipArriveRef.current = true;
+    knownIdsRef.current = new Set();
+    setFilter("PROCESSED");
+    if (!data.case?.id) await load();
+  }
+
+  async function undoApprove() {
+    if (!selected) return;
+    setBusy(true);
+    const res = await fetch(`/api/inbox/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "undoProcess" }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      flash(t("inbox.undoFail"));
       return;
     }
-    await load();
+    flash(t("inbox.undone"));
+    skipArriveRef.current = true;
+    knownIdsRef.current = new Set();
+    setFilter("ANALYZED");
   }
 
   async function dismiss() {
@@ -540,6 +573,8 @@ export default function InboxPage() {
     [t("inbox.taskCreated"), counts.processed, "PROCESSED"],
     [t("inbox.dismissed"), counts.dismissed, "DISMISSED"],
   ] as const;
+
+  const actionPoints = selected ? resolveInboxActionItems(extract, selected.body) : [];
 
   return (
     <div className="space-y-5">
@@ -953,10 +988,19 @@ export default function InboxPage() {
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                       {t("inbox.analyze")}
                     </button>
-                    <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
-                      <CheckCircle2 size={14} />
-                      {t("inbox.approve")}
-                    </button>
+                    {selected.status === "PROCESSED" ? (
+                      <button disabled={busy} onClick={undoApprove} className="axon-btn axon-btn-ghost">
+                        <Undo2 size={14} />
+                        {t("inbox.undoApprove")}
+                      </button>
+                    ) : (
+                      <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
+                        <CheckCircle2 size={14} />
+                        {splitTasks && actionPoints.length > 1
+                          ? t("inbox.approveSplit", { n: actionPoints.length })
+                          : t("inbox.approve")}
+                      </button>
+                    )}
                     <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
                       <Trash2 size={14} />
                       {t("inbox.dismiss")}
@@ -993,6 +1037,37 @@ export default function InboxPage() {
                     {extract.siteSummary || extract.description}
                   </p>
                   <div className="text-xs text-slate-500">{t("inbox.location", { loc: extract.location })}</div>
+                  {actionPoints.length > 0 && (
+                    <div className="rounded-lg bg-white px-3 py-2.5">
+                      <div className="text-xs text-slate-400">{t("inbox.mainPoints")}</div>
+                      <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-sm text-slate-700">
+                        {actionPoints.map((item, i) => (
+                          <li key={`${item.title}-${i}`}>
+                            {item.title}
+                            {item.detail ? (
+                              <div className="text-xs text-slate-500">{item.detail}</div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ol>
+                      {selected.status !== "PROCESSED" && actionPoints.length > 1 && (
+                          <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={splitTasks}
+                              onChange={(e) => setSplitTasks(e.target.checked)}
+                            />
+                            <span>
+                              <span className="font-medium">{t("inbox.splitTasks")}</span>
+                              <span className="mt-0.5 block text-xs text-slate-400">
+                                {splitTasks ? t("inbox.splitHint") : t("inbox.keepTogether")}
+                              </span>
+                            </span>
+                          </label>
+                        )}
+                    </div>
+                  )}
                   <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-slate-700">
                     <span className="text-xs text-slate-400">{t("inbox.suggestedActions")}</span>
                     <div className="mt-1">{extract.recommendation}</div>

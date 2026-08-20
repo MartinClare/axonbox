@@ -29,6 +29,7 @@ import {
   parseInboxAttachments,
 } from "@/lib/inbound-files";
 import { buildInboxSourcePack, withSourcePack } from "@/lib/inbox-source";
+import { resolveInboxActionItems, type InboxActionItem } from "@/lib/inbox-actions";
 import { saveBuffer } from "@/lib/upload";
 import { randomUUID } from "crypto";
 import path from "path";
@@ -464,6 +465,8 @@ export async function processInboxToEventTask(opts: {
   assigneeId?: string;
   subcontractorId?: string;
   createTask?: boolean;
+  splitTasks?: boolean;
+  actionItems?: InboxActionItem[];
 }) {
   const message = await prisma.inboxMessage.findUnique({
     where: { id: opts.id },
@@ -489,9 +492,25 @@ export async function processInboxToEventTask(opts: {
   const text = [message.subject ? `主题：${message.subject}` : "", message.body]
     .filter(Boolean)
     .join("\n");
+  const actionItems = (opts.actionItems && opts.actionItems.length
+    ? opts.actionItems
+    : resolveInboxActionItems(extract, text)
+  ).filter((a) => a.title.trim());
+  extract = { ...extract, actionItems };
+  const splitTasks = Boolean(opts.splitTasks) && actionItems.length > 1;
   const sourcePack = buildInboxSourcePack(message);
-  const description = withSourcePack(extract.description || text, sourcePack);
-  const taskInstructions = withSourcePack(extract.recommendation || extract.description || text, sourcePack);
+  const pointsBlock =
+    actionItems.length > 1
+      ? actionItems.map((a, i) => `${i + 1}. ${a.title}`).join("\n")
+      : "";
+  const description = withSourcePack(
+    [extract.description || text, pointsBlock].filter(Boolean).join("\n\n"),
+    sourcePack,
+  );
+  const taskInstructions = withSourcePack(
+    extract.recommendation || extract.description || text,
+    sourcePack,
+  );
 
   const evidence = await prisma.evidence.create({
     data: {
@@ -577,29 +596,65 @@ export async function processInboxToEventTask(opts: {
   }
 
   let task = null;
+  const createdTasks: Array<{ id: string; title: string }> = [];
   if (opts.createTask !== false) {
     const firstImage = savedFiles.find((f) => f.image);
-    task = await prisma.task.create({
-      data: {
-        title: `跟進：${created.title}`,
-        instructions: taskInstructions,
-        caseId: created.id,
-        assigneeId:
-          (await resolveActorId(opts.assigneeId || opts.userId)) || undefined,
-        dueAt,
-        attachments: savedFiles.length
-          ? {
-              create: savedFiles.map((f) => ({
-                name: f.name,
-                filePath: f.filePath,
-                mime: f.mime,
-                size: f.size,
-                isCover: Boolean(firstImage && f.filePath === firstImage.filePath),
-              })),
-            }
-          : undefined,
-      },
-    });
+    const attachmentCreate = savedFiles.length
+      ? {
+          create: savedFiles.map((f) => ({
+            name: f.name,
+            filePath: f.filePath,
+            mime: f.mime,
+            size: f.size,
+            isCover: Boolean(firstImage && f.filePath === firstImage.filePath),
+          })),
+        }
+      : undefined;
+    const assigneeId =
+      (await resolveActorId(opts.assigneeId || opts.userId)) || undefined;
+    const points = actionItems.length ? actionItems : [{ title: created.title }];
+    const makeChecklist = (items: InboxActionItem[]) =>
+      JSON.stringify(
+        items.map((a) => ({ id: randomUUID(), text: a.title, checked: false })),
+      );
+
+    if (splitTasks) {
+      for (let i = 0; i < points.length; i++) {
+        const item = points[i];
+        const row = await prisma.task.create({
+          data: {
+            title: item.title.slice(0, 160),
+            instructions: withSourcePack(
+              [item.detail, extract.recommendation, `來源：${created.title}`]
+                .filter(Boolean)
+                .join("\n"),
+              sourcePack,
+            ),
+            caseId: created.id,
+            assigneeId,
+            dueAt,
+            sortOrder: i,
+            checklistJson: "[]",
+            attachments: attachmentCreate,
+          },
+        });
+        createdTasks.push({ id: row.id, title: row.title });
+      }
+      task = createdTasks[0] || null;
+    } else {
+      task = await prisma.task.create({
+        data: {
+          title: `跟進：${created.title}`,
+          instructions: taskInstructions,
+          caseId: created.id,
+          assigneeId,
+          dueAt,
+          checklistJson: makeChecklist(points),
+          attachments: attachmentCreate,
+        },
+      });
+      createdTasks.push({ id: task.id, title: task.title });
+    }
   }
 
   const updated = await prisma.inboxMessage.update({
@@ -617,8 +672,46 @@ export async function processInboxToEventTask(opts: {
     message: updated,
     case: created,
     task,
+    tasks: createdTasks,
     evidence,
     extract,
+    splitTasks,
     reused: false,
   };
+}
+
+export async function undoInboxProcess(id: string) {
+  const message = await prisma.inboxMessage.findUnique({ where: { id } });
+  if (!message) throw new Error("not found");
+  if (message.status !== "PROCESSED" || !message.caseId) {
+    throw new Error("nothing to undo");
+  }
+  const caseId = message.caseId;
+  const others = await prisma.inboxMessage.count({
+    where: { caseId, id: { not: id } },
+  });
+  if (others > 0) {
+    throw new Error("case is linked to other inbox items");
+  }
+
+  await prisma.inboxMessage.update({
+    where: { id },
+    data: {
+      status: message.aiJson ? "ANALYZED" : "PENDING",
+      processedAt: null,
+      caseId: null,
+      evidenceId: null,
+    },
+  });
+  await prisma.evidence.deleteMany({ where: { caseId } });
+  await prisma.case.delete({ where: { id: caseId } });
+
+  const updated = await prisma.inboxMessage.findUnique({
+    where: { id },
+    include: {
+      case: { select: { id: true, caseNo: true, title: true, status: true } },
+      forwardedBy: { select: { id: true, name: true, inboundKey: true } },
+    },
+  });
+  return { message: updated, undone: true };
 }

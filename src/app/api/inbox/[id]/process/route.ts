@@ -17,6 +17,8 @@ export async function POST(req: Request, { params }: Params) {
     assigneeId?: string;
     subcontractorId?: string;
     createTask?: boolean;
+    splitTasks?: boolean;
+    actionItems?: Array<{ title: string; detail?: string }>;
   } = {};
   try {
     body = await req.json();
@@ -31,6 +33,8 @@ export async function POST(req: Request, { params }: Params) {
       assigneeId: body.assigneeId,
       subcontractorId: body.subcontractorId,
       createTask: body.createTask !== false,
+      splitTasks: Boolean(body.splitTasks),
+      actionItems: Array.isArray(body.actionItems) ? body.actionItems : undefined,
     });
     return NextResponse.json(result);
   } catch (e) {

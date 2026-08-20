@@ -1,6 +1,8 @@
 import type OpenAI from "openai";
 import { getAIClient, getAIModel, hasAIKey, hasOpenAIKey } from "./ai-client";
 
+import { parseInboxActionItems, normalizeActionItems, type InboxActionItem } from "./inbox-actions";
+
 export type CaseCategory = "SAFETY" | "QUALITY" | "PROGRESS" | "ENVIRONMENT" | "OTHER";
 export type Severity = "HIGH" | "MEDIUM" | "LOW";
 
@@ -28,6 +30,7 @@ export type ExtractResult = {
   model?: string;
   tags: string[];
   analysisMode: "record" | "discover";
+  actionItems: InboxActionItem[];
 };
 
 export { hasAIKey, hasOpenAIKey, getAIModel };
@@ -92,6 +95,7 @@ function groundedFallback(text?: string): ExtractResult {
     mock: false,
     tags: ["待補充"],
     analysisMode: "discover",
+    actionItems: parseInboxActionItems(text || ""),
   };
 }
 
@@ -244,6 +248,7 @@ function mockExtract(
     mock: true,
     tags: normalizeTags(tags),
     analysisMode,
+    actionItems: parseInboxActionItems(text || ""),
   };
 }
 
@@ -313,6 +318,12 @@ function normalizeExtract(
     model,
     tags: normalizeTags(parsed.tags, [modeTag]),
     analysisMode,
+    actionItems: (() => {
+      const fromAi = normalizeActionItems(
+        (parsed as ExtractResult & { actionItems?: InboxActionItem[] }).actionItems,
+      );
+      return fromAi.length ? fromAi : parseInboxActionItems(input.text || "");
+    })(),
   };
 }
 
@@ -350,7 +361,7 @@ export async function extractFromInput(input: {
 這是 WhatsApp 轉發收件。必須以訊息正文（及照片，如有）判斷個案。
 - 短訊／「有 comment／請跟進／RMO」之類：title 用原意改寫，category=OTHER，findings=[]。
 - 沒有照片時，禁止描述圍欄、開挖、洞口、道路、HyD、XPMS 或任何未在文字出現的現場。
-- 不要當巡檢清單逐項檢查。
+- 不要發明巡檢清單。但原文若已用項目符號、編號或分號列出多個要求，必須全部寫進 actionItems，不可合併成一項。
 `
       : "";
   const docNote = input.documentNote
@@ -391,8 +402,10 @@ ${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discove
   "siteSummary":"一句話，必須能對回原文",
   "confidence":0到1,
   "tags":["短標籤1","短標籤2"],
-  "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}]
+  "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}],
+  "actionItems":[{"title":"一項跟進","detail":"可選補充"}]
 }
+actionItems：把原文裡每一個獨立要求／項目符號／編號項各列一筆，語言跟隨原文，不要翻譯、不要合併、不要發明原文沒有的事項。只有一項要求時也可只列 1 筆。
 tags：3～8 個短繁中標籤，必須來自原文或照片，不要加 #。
 文字補充：${input.text || "(無)"}${docNote}`,
       },

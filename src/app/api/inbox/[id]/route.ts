@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { analyzeInboxMessage } from "@/lib/inbox";
+import { analyzeInboxMessage, undoInboxProcess } from "@/lib/inbox";
 import { serializeInboxMessage } from "@/lib/inbox-serialize";
 
 const inboxInclude = {
@@ -75,6 +75,21 @@ export async function PATCH(req: Request, { params }: Params) {
       include: inboxInclude,
     });
     return NextResponse.json(serializeInboxMessage(message, { includeFileData: true }));
+  }
+
+  if (body.action === "undoProcess") {
+    try {
+      const result = await undoInboxProcess(id);
+      return NextResponse.json({
+        ok: true,
+        message: result.message ? serializeInboxMessage(result.message, { includeFileData: true }) : null,
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "undo failed" },
+        { status: 400 },
+      );
+    }
   }
 
   if (body.action === "delete") {
