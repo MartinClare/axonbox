@@ -18,6 +18,9 @@ export type InboxAttachment =
       name?: string;
       mime?: string;
       base64?: string;
+      filePath?: string;
+      ycloudId?: string;
+      ycloudLink?: string;
     };
 
 export type NormalizedInboxMessage = {

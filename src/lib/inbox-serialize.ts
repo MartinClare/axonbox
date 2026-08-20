@@ -3,7 +3,7 @@ import {
   isAudioFile,
   isDocumentFile,
   isImageFile,
-  parseInboxAttachments,
+  resolveInboxFiles,
 } from "@/lib/inbound-files";
 
 export type InboxFileView = {
@@ -80,10 +80,10 @@ export function serializeInboxMessage(
   m: InboxRecord,
   opts?: { includeFileData?: boolean },
 ): InboxListItem {
-  const stored = parseInboxAttachments(m.attachments);
+  const stored = resolveInboxFiles(m.attachments, m.rawPayload);
   const files: InboxFileView[] = stored.map((f, i) => {
     const kind = fileKind(f);
-    const includeData = Boolean(opts?.includeFileData) && (kind === "image" || kind === "audio");
+    const includeData = Boolean(opts?.includeFileData) && (kind === "image" || kind === "audio") && f.base64;
     return {
       name: f.name,
       mime: f.mime,

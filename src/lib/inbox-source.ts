@@ -1,5 +1,5 @@
 import { mailboxAlias } from "@/lib/email-inbound";
-import { isAudioFile, isDocumentFile, isImageFile, parseInboxAttachments } from "@/lib/inbound-files";
+import { isAudioFile, isDocumentFile, isImageFile, resolveInboxFiles } from "@/lib/inbound-files";
 import { SOURCE_PACK_MARK } from "@/lib/inbox-source-pack";
 
 export { SOURCE_PACK_MARK, splitSourcePack, withSourcePack } from "@/lib/inbox-source-pack";
@@ -102,7 +102,7 @@ function channelLabel(channel: string) {
 
 export function buildInboxSourcePack(message: InboxSourceInput) {
   const raw = parseRaw(message.rawPayload);
-  const files = parseInboxAttachments(message.attachments);
+  const files = resolveInboxFiles(message.attachments, message.rawPayload);
   const body = (message.body || "").trim();
   const blob = `${message.sender}\n${message.subject || ""}\n${body}\n${JSON.stringify(raw)}`;
 

@@ -1,5 +1,12 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { MAX_FILE_BYTES, MAX_FILES } from "@/lib/inbound-files";
+import {
+  compactStoredFile,
+  MAX_DOWNLOAD_BYTES,
+  MAX_FILE_BYTES,
+  MAX_FILES,
+  type StoredInboundFile,
+} from "@/lib/inbound-files";
+import { persistLargeInboxFile } from "@/lib/inbox-file-bytes";
 import type { InboxAttachment, InboxConnector, NormalizedInboxMessage } from "./types";
 
 const BUNDLE_WINDOW_MS = 3 * 60 * 1000;
@@ -103,19 +110,30 @@ export function verifyYCloudSignature(rawBody: string, signatureHeader: string |
   }
 }
 
+function mediaStub(media: YCloudMedia | undefined, fallbackName: string): StoredInboundFile {
+  return compactStoredFile({
+    name: media?.filename || fallbackName,
+    mime: media?.mime_type || media?.mimeType || "application/octet-stream",
+    ycloudId: media?.id,
+    ycloudLink: media?.link,
+  });
+}
+
 async function downloadYCloudMedia(
   media: YCloudMedia | undefined,
   fallbackName: string,
 ): Promise<InboxAttachment | null> {
+  const stub = mediaStub(media, fallbackName);
   const apiKey = process.env.YCLOUD_API_KEY?.trim();
-  if (!apiKey) {
-    console.warn("[whatsapp] YCLOUD_API_KEY missing; skip media download");
-    return null;
+  const link = media?.link || "";
+  if (!link) {
+    if (!apiKey) console.warn("[whatsapp] YCLOUD_API_KEY missing; skip media download");
+    return stub.name ? stub : null;
   }
-  const link =
-    media?.link ||
-    (media?.id ? `https://api.ycloud.com/v2/whatsapp/media/download/${media.id}` : "");
-  if (!link) return null;
+  if (!apiKey) {
+    console.warn("[whatsapp] YCLOUD_API_KEY missing; keep media link only");
+    return stub;
+  }
 
   try {
     const res = await fetch(link, {
@@ -123,23 +141,31 @@ async function downloadYCloudMedia(
     });
     if (!res.ok) {
       console.error("[whatsapp] media download failed", res.status, media?.id || link);
-      return null;
+      return stub;
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > MAX_FILE_BYTES) {
-      console.warn("[whatsapp] media too large", buf.length, fallbackName);
-      return null;
-    }
     const mime =
       media?.mime_type ||
       media?.mimeType ||
       res.headers.get("content-type") ||
       "application/octet-stream";
     const name = media?.filename || fallbackName;
-    return { name, mime, base64: buf.toString("base64") };
+    if (buf.length > MAX_DOWNLOAD_BYTES) {
+      console.warn("[whatsapp] media too large", buf.length, name);
+      return compactStoredFile({ ...stub, name, mime });
+    }
+    if (buf.length > MAX_FILE_BYTES) {
+      return persistLargeInboxFile(buf, compactStoredFile({ ...stub, name, mime }));
+    }
+    return compactStoredFile({
+      ...stub,
+      name,
+      mime,
+      base64: buf.toString("base64"),
+    });
   } catch (err) {
     console.error("[whatsapp] media download error", err);
-    return null;
+    return stub;
   }
 }
 
@@ -229,7 +255,7 @@ export async function parseYCloudInboundEvent(
       document.filename || `doc-${document.id || "wa"}.pdf`,
     );
     if (file) attachments.push(file);
-    else bodyParts.push(`[文件] ${document.filename || ""}`.trim());
+    else bodyParts.push("[文件]");
   }
 
   if (inbound.video) {

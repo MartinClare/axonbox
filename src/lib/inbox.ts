@@ -18,6 +18,7 @@ import {
 import { mailboxAlias } from "@/lib/email-inbound";
 import { resolveUserByMailbox } from "@/lib/inbound-key";
 import {
+  compactStoredFile,
   emailIsThin,
   emailRefersToAttachment,
   excerptFromDocument,
@@ -25,9 +26,12 @@ import {
   isAudioFile,
   isDocumentFile,
   isImageFile,
+  MAX_FILE_BYTES,
   MAX_FILES,
   parseInboxAttachments,
+  resolveInboxFiles,
 } from "@/lib/inbound-files";
+import { inboxFileBuffer } from "@/lib/inbox-file-bytes";
 import { buildInboxSourcePack, withSourcePack } from "@/lib/inbox-source";
 import { resolveInboxActionItems, type InboxActionItem } from "@/lib/inbox-actions";
 import { saveBuffer } from "@/lib/upload";
@@ -97,11 +101,7 @@ function mergeAttachments(
   existingJson: string | null | undefined,
   incoming: InboxAttachment[] | undefined,
 ): InboxAttachment[] {
-  const prev = parseInboxAttachments(existingJson).map((f) => ({
-    name: f.name,
-    mime: f.mime,
-    base64: f.base64,
-  }));
+  const prev = parseInboxAttachments(existingJson).map(compactStoredFile);
   const next = [...prev];
   for (const att of incoming || []) {
     if (next.length >= MAX_FILES) break;
@@ -110,13 +110,20 @@ function mergeAttachments(
       if (m) next.push({ name: "attachment", mime: m[1], base64: m[2] });
       continue;
     }
-    if (att?.base64) {
-      next.push({
+    const base64 = att?.base64
+      ? String(att.base64).replace(/^data:[^;]+;base64,/, "")
+      : undefined;
+    if (!base64 && !att?.filePath && !att?.ycloudLink && !att?.ycloudId) continue;
+    next.push(
+      compactStoredFile({
         name: att.name || "attachment",
         mime: att.mime || "application/octet-stream",
-        base64: String(att.base64).replace(/^data:[^;]+;base64,/, ""),
-      });
-    }
+        base64,
+        filePath: att.filePath,
+        ycloudId: att.ycloudId,
+        ycloudLink: att.ycloudLink,
+      }),
+    );
   }
   return next.slice(0, MAX_FILES);
 }
@@ -371,7 +378,7 @@ export async function analyzeInboxMessage(
   const message = await prisma.inboxMessage.findUnique({ where: { id } });
   if (!message) throw new Error("not found");
 
-  const files = parseInboxAttachments(message.attachments);
+  const files = resolveInboxFiles(message.attachments, message.rawPayload);
   const photo = files.find(isImageFile);
   const docs = files.filter(isDocumentFile);
   const audios = files.filter(isAudioFile);
@@ -379,7 +386,8 @@ export async function analyzeInboxMessage(
   const voiceBits: string[] = [];
   for (const audio of audios.slice(0, 3)) {
     try {
-      const buf = Buffer.from(audio.base64, "base64");
+      const buf = await inboxFileBuffer(audio);
+      if (!buf) continue;
       const t = await transcribeAudio(buf, audio.name || "voice.ogg");
       if (t.text?.trim()) voiceBits.push(`【語音】${t.text.trim()}`);
     } catch (err) {
@@ -431,7 +439,12 @@ export async function analyzeInboxMessage(
   if (needDoc) {
     const excerpts: string[] = [];
     for (const doc of docs.slice(0, 2)) {
-      const buf = Buffer.from(doc.base64, "base64");
+      const buf = doc.base64
+        ? Buffer.from(doc.base64, "base64")
+        : doc.filePath
+          ? await inboxFileBuffer(doc)
+          : null;
+      if (!buf || buf.length > MAX_FILE_BYTES) continue;
       const excerpt = await excerptFromDocument(buf, doc);
       if (excerpt) excerpts.push(`【${doc.name}】\n${excerpt}`);
     }
@@ -561,11 +574,12 @@ export async function processInboxToEventTask(opts: {
     data: { caseId: created.id },
   });
 
-  const files = parseInboxAttachments(message.attachments);
+  const files = resolveInboxFiles(message.attachments, message.rawPayload);
   const savedFiles: Array<{ name: string; filePath: string; mime: string; size: number; image: boolean }> = [];
   for (const file of files) {
     try {
-      const buf = Buffer.from(file.base64, "base64");
+      const buf = await inboxFileBuffer(file);
+      if (!buf) continue;
       const ext = path.extname(file.name) || "";
       const filename = `${Date.now()}-${randomUUID().slice(0, 8)}${ext || ""}`;
       const saved = await saveBuffer(buf, filename, "evidence", file.mime);

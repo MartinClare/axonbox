@@ -4,11 +4,32 @@ import { extractText } from "unpdf";
 export type StoredInboundFile = {
   name: string;
   mime: string;
-  base64: string;
+  base64?: string;
+  filePath?: string;
+  ycloudId?: string;
+  ycloudLink?: string;
 };
 
 export const MAX_FILE_BYTES = 8_000_000;
+/** WhatsApp PDFs can exceed the JSON-in-DB cap; still keep a downloadable copy. */
+export const MAX_DOWNLOAD_BYTES = 50_000_000;
 export const MAX_FILES = 8;
+
+export function compactStoredFile(file: StoredInboundFile): StoredInboundFile {
+  const base64 = file.base64?.replace(/^data:[^;]+;base64,/, "") || undefined;
+  return {
+    name: file.name || "attachment",
+    mime: file.mime || "application/octet-stream",
+    ...(base64 ? { base64 } : {}),
+    ...(file.filePath ? { filePath: file.filePath } : {}),
+    ...(file.ycloudId ? { ycloudId: file.ycloudId } : {}),
+    ...(file.ycloudLink ? { ycloudLink: file.ycloudLink } : {}),
+  };
+}
+
+function fileIdentity(file: StoredInboundFile) {
+  return file.ycloudId || file.ycloudLink || file.filePath || file.name.toLowerCase();
+}
 
 export function parseInboxAttachments(raw?: string | null): StoredInboundFile[] {
   if (!raw) return [];
@@ -24,18 +45,90 @@ export function parseInboxAttachments(raw?: string | null): StoredInboundFile[] 
         continue;
       }
       if (!item || typeof item !== "object") continue;
-      const base64 = String(item.base64 || "").replace(/^data:[^;]+;base64,/, "");
-      if (!base64) continue;
-      out.push({
-        name: String(item.name || item.filename || "attachment"),
-        mime: String(item.mime || item.contentType || "application/octet-stream"),
-        base64,
-      });
+      const rec = item as Record<string, unknown>;
+      const base64 = String(rec.base64 || "").replace(/^data:[^;]+;base64,/, "");
+      const filePath = String(rec.filePath || "").trim();
+      const ycloudId = String(rec.ycloudId || rec.id || "").trim();
+      const ycloudLink = String(rec.ycloudLink || rec.link || "").trim();
+      const name = String(rec.name || rec.filename || "attachment");
+      if (!base64 && !filePath && !ycloudLink && !ycloudId) continue;
+      out.push(
+        compactStoredFile({
+          name,
+          mime: String(rec.mime || rec.contentType || rec.mime_type || "application/octet-stream"),
+          base64: base64 || undefined,
+          filePath: filePath || undefined,
+          ycloudId: ycloudId || undefined,
+          ycloudLink: ycloudLink || undefined,
+        }),
+      );
     }
     return out;
   } catch {
     return [];
   }
+}
+
+type RawMedia = {
+  id?: string;
+  link?: string;
+  filename?: string;
+  mime_type?: string;
+  mimeType?: string;
+};
+
+function stubFromRawMedia(media: RawMedia | null | undefined, fallbackName: string): StoredInboundFile | null {
+  if (!media || typeof media !== "object") return null;
+  const name = String(media.filename || fallbackName).trim();
+  const ycloudId = String(media.id || "").trim();
+  const ycloudLink = String(media.link || "").trim();
+  if (!name && !ycloudId && !ycloudLink) return null;
+  return compactStoredFile({
+    name: name || fallbackName,
+    mime: String(media.mime_type || media.mimeType || "application/octet-stream"),
+    ycloudId: ycloudId || undefined,
+    ycloudLink: ycloudLink || undefined,
+  });
+}
+
+export function mediaStubsFromRawPayload(rawPayload?: string | null): StoredInboundFile[] {
+  if (!rawPayload) return [];
+  try {
+    const raw = JSON.parse(rawPayload) as Record<string, unknown>;
+    if (!raw || typeof raw !== "object") return [];
+    const out: StoredInboundFile[] = [];
+    const push = (file: StoredInboundFile | null) => {
+      if (!file) return;
+      const key = fileIdentity(file);
+      if (out.some((f) => fileIdentity(f) === key || f.name === file.name)) return;
+      out.push(file);
+    };
+    push(stubFromRawMedia(raw.document as RawMedia, "document.pdf"));
+    push(stubFromRawMedia(raw.image as RawMedia, "image.jpg"));
+    push(stubFromRawMedia(raw.audio as RawMedia, "audio.ogg"));
+    if (Array.isArray(raw.mediaFiles)) {
+      for (const item of raw.mediaFiles) push(stubFromRawMedia(item as RawMedia, "file"));
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Stored attachments plus WhatsApp media that never made it into the JSON blob. */
+export function resolveInboxFiles(
+  attachments?: string | null,
+  rawPayload?: string | null,
+): StoredInboundFile[] {
+  const stored = parseInboxAttachments(attachments);
+  const extras = mediaStubsFromRawPayload(rawPayload);
+  const out = [...stored];
+  for (const extra of extras) {
+    const key = fileIdentity(extra);
+    if (out.some((f) => fileIdentity(f) === key || f.name === extra.name)) continue;
+    out.push(extra);
+  }
+  return out.slice(0, MAX_FILES);
 }
 
 export function extOf(name: string) {

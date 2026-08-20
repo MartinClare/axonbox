@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { parseInboxAttachments } from "@/lib/inbound-files";
+import { compactStoredFile, resolveInboxFiles } from "@/lib/inbound-files";
+import { inboxFileBuffer, persistLargeInboxFile, shouldEmbedBase64 } from "@/lib/inbox-file-bytes";
+
+export const maxDuration = 60;
 
 type Params = { params: Promise<{ id: string; index: string }> };
 
@@ -16,15 +19,32 @@ export async function GET(_req: Request, { params }: Params) {
 
   const message = await prisma.inboxMessage.findUnique({
     where: { id },
-    select: { attachments: true },
+    select: { attachments: true, rawPayload: true },
   });
   if (!message) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const files = parseInboxAttachments(message.attachments);
+  const files = resolveInboxFiles(message.attachments, message.rawPayload);
   const file = files[i];
   if (!file) return NextResponse.json({ error: "file not found" }, { status: 404 });
 
-  const buf = Buffer.from(file.base64, "base64");
+  const buf = await inboxFileBuffer(file);
+  if (!buf) return NextResponse.json({ error: "file not found" }, { status: 404 });
+
+  if (!file.base64 && !file.filePath) {
+    try {
+      const stored = shouldEmbedBase64(buf.length)
+        ? compactStoredFile({ ...file, base64: buf.toString("base64") })
+        : await persistLargeInboxFile(buf, file);
+      files[i] = stored;
+      await prisma.inboxMessage.update({
+        where: { id },
+        data: { attachments: JSON.stringify(files.map(compactStoredFile)) },
+      });
+    } catch (err) {
+      console.error("[inbox] persist downloaded file failed", file.name, err);
+    }
+  }
+
   const type = sniffMime(file, buf);
   const inline =
     type.startsWith("image/") ||
@@ -38,6 +58,7 @@ export async function GET(_req: Request, { params }: Params) {
       "Content-Type": type,
       "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, max-age=120",
+      "Content-Length": String(buf.length),
     },
   });
 }

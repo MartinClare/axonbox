@@ -86,6 +86,57 @@ function fileSrc(f: InboxFile, messageId?: string, index?: number) {
   return f.url || f.dataUrl || (messageId != null && index != null ? `/api/inbox/${messageId}/files/${index}` : null);
 }
 
+function fileLineMatch(line: string) {
+  const m = line.match(/^\[文件\]\s*(.+)$/);
+  return m?.[1]?.trim() || "";
+}
+
+function InboxMessageBody({
+  body,
+  files,
+  messageId,
+  onPreview,
+}: {
+  body: string;
+  files: InboxFile[];
+  messageId: string;
+  onPreview: (index: number) => void;
+}) {
+  const lines = body.split("\n");
+  return (
+    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+      {lines.map((line, i) => {
+        const name = fileLineMatch(line);
+        const idx = name ? files.findIndex((f) => f.name === name) : -1;
+        const file = idx >= 0 ? files[idx] : null;
+        const src = file ? fileSrc(file, messageId, idx) : null;
+        return (
+          <span key={`${i}-${line.slice(0, 24)}`}>
+            {i > 0 ? "\n" : null}
+            {src ? (
+              <a
+                href={src}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey) return;
+                  e.preventDefault();
+                  onPreview(idx);
+                }}
+                className="text-[var(--axon-blue)] underline decoration-slate-300 underline-offset-2 hover:decoration-[var(--axon-blue)]"
+              >
+                {name}
+              </a>
+            ) : (
+              line
+            )}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
 function keepLoadedFiles(prev: InboxRow | null, next: InboxRow): InboxRow {
   if (
     prev?.id === next.id &&
@@ -901,9 +952,12 @@ export default function InboxPage() {
                   </h2>
                 )}
                 {selected.body.trim() ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                    {selected.body}
-                  </p>
+                  <InboxMessageBody
+                    body={selected.body}
+                    files={selected.files || []}
+                    messageId={selected.id}
+                    onPreview={setPreviewIndex}
+                  />
                 ) : (
                   <p className="mt-2 text-sm text-slate-400">{t("inbox.noText")}</p>
                 )}
@@ -937,7 +991,17 @@ export default function InboxPage() {
                     {selected.files?.map((f, idx) => {
                       if (f.kind === "image") return null;
                       const src = fileSrc(f, selected.id, idx);
-                      if (!src) return null;
+                      if (!src) {
+                        return (
+                          <div
+                            key={`${f.name}-${idx}`}
+                            className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600"
+                          >
+                            <FileText size={16} className="shrink-0 text-slate-500" />
+                            <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                          </div>
+                        );
+                      }
                       return (
                         <a
                           key={`${f.name}-${idx}`}
