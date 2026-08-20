@@ -1,5 +1,5 @@
 /**
- * End-to-end real case walkthrough against local AxonBox.
+ * End-to-end real case walkthrough against local AxonCase.
  * Creates a realistic safety finding, runs assign → block → after proof → close → pack.
  */
 import { writeFileSync } from "fs";

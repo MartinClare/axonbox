@@ -278,7 +278,7 @@ export async function extractFromInput(input: {
   const emailRules =
     input.mode === "email"
       ? `
-這是一封轉寄到 AxonBox 的郵件。必須以郵件主旨與正文判斷個案。
+這是一封轉寄到 AxonCase 的郵件。必須以郵件主旨與正文判斷個案。
 - 不要把 PDF／Word 全文、條款或工作清單寫進 description 或 recommendation。
 - 若有「附件摘錄」，只用來確認這是什麼個案（標題、類別、地點、嚴重度）。最多在 description 加一句「附件為…」。
 - 不要執行或展開附件裡提到的所有事項。
@@ -306,7 +306,7 @@ export async function extractFromInput(input: {
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       {
         type: "text",
-        text: `你是 AxonBox 資深工地巡檢／香港工程顧問 AI（熟悉 HyD XPMS／道路挖掘許可常識）。
+        text: `你是 AxonCase 資深工地巡檢／香港工程顧問 AI（熟悉 HyD XPMS／道路挖掘許可常識）。
 ${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
 只回傳純 JSON，文字必須使用繁體中文：
 {

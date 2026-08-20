@@ -1,4 +1,4 @@
-# AxonBox Web User Manual
+# AxonCase Web User Manual
 
 English UI. Desktop web. Demo login: `admin@axon.demo` / `demo1234`.
 
@@ -6,7 +6,7 @@ This is a **tutorial** for the live app. Read chapters 1–2 for the working pic
 
 ---
 
-## 1. Why AxonBox exists
+## 1. Why AxonCase exists
 
 Figures in this chapter are from the AXONCASE pitch. They explain the idea. From chapter 3 onward, screenshots are the **live web app**.
 
@@ -30,7 +30,7 @@ That pattern wastes hours, buries instructions, leaves photos that cannot be use
 
 ### 1.4 From chaos to structured control
 
-AxonBox is meant to turn a site photo or message into a **Case** with an owner, a due date, after-proof, and a close-out file — then roll the day up for the PM/owner.
+AxonCase is meant to turn a site photo or message into a **Case** with an owner, a due date, after-proof, and a close-out file — then roll the day up for the PM/owner.
 
 ![From WhatsApp chaos to structured project control](/help-media/ppt-04-from-chaos.jpg)
 
@@ -93,7 +93,7 @@ In practice: one photo or a forwarded chat becomes a **Case** — that Case is t
 
 ## 3. Open the web app
 
-AxonBox is a website, not a store app. Open it in the browser, bookmark it, or install it to the Home Screen if you work from a phone. Switch the interface to English first so the rest of this tutorial matches the buttons you see.
+AxonCase is a website, not a store app. Open it in the browser, bookmark it, or install it to the Home Screen if you work from a phone. Switch the interface to English first so the rest of this tutorial matches the buttons you see.
 
 ### 3.1 Open the URL
 
@@ -185,7 +185,7 @@ Use this chapter as the map. Every later chapter is a room on this map. You do n
 
 ### 4.4 Typical path through the app
 
-Three doors put work into AxonBox. Pick the one that matches how the issue arrived:
+Three doors put work into AxonCase. Pick the one that matches how the issue arrived:
 
 - **Site capture** when you are at the work face and can take the photo yourself.
 - **Inbox** when the issue already arrived as email or WhatsApp — forward or paste it; do not re-photograph a chat.

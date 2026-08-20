@@ -3,7 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
-  AxonBox engineering palette
+  AxonCase engineering palette
   Navy #003049 · Red #D62828 · Orange #F77F00 · Yellow #FECE32
   Light: white surfaces · Dark: navy ink surfaces
 */

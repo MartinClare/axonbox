@@ -14,7 +14,7 @@ export async function GET() {
   let org = await prisma.orgSettings.findFirst();
   if (!org) {
     org = await prisma.orgSettings.create({
-      data: { name: "AxonBox Enterprise", plan: "ENTERPRISE" },
+      data: { name: "AxonCase Enterprise", plan: "ENTERPRISE" },
     });
   }
 
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest) {
   if (!org) {
     org = await prisma.orgSettings.create({
       data: {
-        name: String(body.name || "AxonBox Enterprise"),
+        name: String(body.name || "AxonCase Enterprise"),
         plan: String(body.plan || "ENTERPRISE"),
         allowSubInvite: body.allowSubInvite !== false,
         requireApproval: body.requireApproval !== false,

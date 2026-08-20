@@ -273,7 +273,7 @@ model ChecklistRun {
 // Enterprise org settings for commercial RBAC
 model OrgSettings {
   id               String   @id @default(cuid())
-  name             String   @default("AxonBox Demo Org")
+  name             String   @default("AxonCase Demo Org")
   plan             String   @default("ENTERPRISE")
   allowSubInvite   Boolean  @default(true)
   requireApproval  Boolean  @default(true)

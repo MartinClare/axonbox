@@ -1,4 +1,4 @@
-/* AxonBox PWA v5 — never cache HTML navigations */
+/* AxonCase PWA v5 — never cache HTML navigations */
 const CACHE = "axonbox-v5";
 const PRECACHE = [
   "/manifest.webmanifest",

@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: true,
-        service: "AxonBox",
+        service: "AxonCase",
         db: "up",
         ai: hasAIKey(),
         storage,
@@ -27,7 +27,7 @@ export async function GET() {
     return NextResponse.json(
       {
         ok: false,
-        service: "AxonBox",
+        service: "AxonCase",
         db: "down",
         ai: hasAIKey(),
         storage,

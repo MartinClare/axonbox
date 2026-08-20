@@ -1,4 +1,4 @@
-# Stop AxonBox daemon + server on port 3000
+# Stop AxonCase daemon + server on port 3000
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $Root "package.json"))) { $Root = $PSScriptRoot }
 $logDir = Join-Path $Root "logs"
@@ -19,4 +19,4 @@ if (Test-Path $pidFile) {
 Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue |
   ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
-Write-Host "AxonBox daemon/server stopped."
+Write-Host "AxonCase daemon/server stopped."

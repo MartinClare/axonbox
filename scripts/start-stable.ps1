@@ -1,4 +1,4 @@
-# AxonBox stable start — PC + phone (LAN); optional -Watch auto-restart
+# AxonCase stable start — PC + phone (LAN); optional -Watch auto-restart
 param(
   [switch]$Watch
 )
@@ -36,12 +36,12 @@ $env:AUTH_TRUST_HOST = "true"
 if (-not $env:NEXTAUTH_SECRET) { $env:NEXTAUTH_SECRET = "axon-case-demo-secret-change-me" }
 
 if (-not (Test-Path ".next\BUILD_ID")) {
-  Write-Host "Building AxonBox..."
+  Write-Host "Building AxonCase..."
   npm run build
 }
 
 Write-Host ""
-Write-Host "AxonBox ready:"
+Write-Host "AxonCase ready:"
 Write-Host "  PC:    http://localhost:$port"
 Write-Host "  Phone: http://${lan}:$port   (same Wi-Fi)"
 Write-Host "  App:   open /install on phone → Add to Home Screen"

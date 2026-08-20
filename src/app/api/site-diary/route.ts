@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
         `• ${c.caseNo} ${c.title}（${CATEGORY_LABELS[c.category] || c.category}/${CASE_STATUS_LABELS[c.status] || c.status}）`,
     ),
     "",
-    "— AxonBox 軟日記",
+    "— AxonCase 軟日記",
   ];
 
   return NextResponse.json({

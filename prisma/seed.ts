@@ -539,7 +539,7 @@ async function main() {
   await prisma.orgSettings.deleteMany();
   await prisma.orgSettings.create({
     data: {
-      name: "AxonBox Enterprise Demo",
+      name: "AxonCase Enterprise Demo",
       plan: "ENTERPRISE",
       allowSubInvite: true,
       requireApproval: true,
@@ -554,7 +554,7 @@ async function main() {
         name: "\u65e5\u5e38\u5b89\u5168\u9ede\u6aa2",
         category: "SAFETY",
         description: "\u73fe\u5834\u6bcf\u65e5\u5b89\u5168\u5de1\u6aa2\uff08\u570d\u6b04\u3001PPE\u3001\u901a\u9053\uff09",
-        sourceRef: "AxonBox site practice + HyD safety awareness",
+        sourceRef: "AxonCase site practice + HyD safety awareness",
         itemsJson: JSON.stringify([
           { id: "s1", text: "\u4f5c\u696d\u5340\u570d\u6b04\uff0f\u570d\u677f\u5b8c\u6574", required: true },
           { id: "s2", text: "\u6d1e\u53e3\uff0f\u908a\u7de3\u5df2\u5c01\u9589\u6216\u8b77\u7c95", required: true },
@@ -581,7 +581,7 @@ async function main() {
         name: "\u9a57\u6536\uff0f\u5b8c\u5de5\u9ede\u6aa2",
         category: "ACCEPTANCE",
         description: "\u968e\u6bb5\uff0f\u5b8c\u5de5\u9a57\u6536\u524d\u6587\u4ef6\u8207\u73fe\u5834\u72c0\u6cc1",
-        sourceRef: "AxonBox acceptance pack",
+        sourceRef: "AxonCase acceptance pack",
         itemsJson: JSON.stringify([
           { id: "a1", text: "\u6240\u6709\u9ad8\u98a8\u96aa\u4e8b\u4ef6\u5df2\u95dc\u9589\u4e26\u9644\u8b49\u64da\u7167", required: true },
           { id: "a2", text: "\u6574\u6539\u5b8c\u6210\u7167\u8207\u539f\u59cb\u7167\u53ef\u5c0d\u7167", required: true },

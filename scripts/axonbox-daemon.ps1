@@ -1,4 +1,4 @@
-# AxonBox daemon — survives IDE/agent terminal exit; health-check + auto-restart
+# AxonCase daemon — survives IDE/agent terminal exit; health-check + auto-restart
 $ErrorActionPreference = "Continue"
 $NodeDir = "C:\Users\user\AppData\Local\nodejs-portable\node-v22.17.0-win-x64"
 $env:Path = "$NodeDir;" + $env:Path

@@ -1,4 +1,4 @@
-# Launch AxonBox daemon detached (does not die when this shell closes)
+# Launch AxonCase daemon detached (does not die when this shell closes)
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $Root "package.json"))) { $Root = $PSScriptRoot }
@@ -28,7 +28,7 @@ $proc = Start-Process -FilePath "powershell.exe" `
   -WindowStyle Hidden `
   -PassThru
 
-Write-Host "AxonBox daemon launched (powershell pid $($proc.Id))"
+Write-Host "AxonCase daemon launched (powershell pid $($proc.Id))"
 Write-Host "  PC:    http://localhost:3000"
 Write-Host "  Log:   $logDir\daemon.log"
 Write-Host "  Stop:  npm run stop:daemon"
