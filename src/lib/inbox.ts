@@ -28,6 +28,7 @@ import {
   MAX_FILES,
   parseInboxAttachments,
 } from "@/lib/inbound-files";
+import { buildInboxSourcePack, withSourcePack } from "@/lib/inbox-source";
 import { saveBuffer } from "@/lib/upload";
 import { randomUUID } from "crypto";
 import path from "path";
@@ -464,7 +465,10 @@ export async function processInboxToEventTask(opts: {
   subcontractorId?: string;
   createTask?: boolean;
 }) {
-  const message = await prisma.inboxMessage.findUnique({ where: { id: opts.id } });
+  const message = await prisma.inboxMessage.findUnique({
+    where: { id: opts.id },
+    include: { forwardedBy: { select: { name: true, phone: true, email: true } } },
+  });
   if (!message) throw new Error("not found");
   if (message.status === "PROCESSED" && message.caseId) {
     const existing = await prisma.case.findUnique({
@@ -485,12 +489,15 @@ export async function processInboxToEventTask(opts: {
   const text = [message.subject ? `主题：${message.subject}` : "", message.body]
     .filter(Boolean)
     .join("\n");
+  const sourcePack = buildInboxSourcePack(message);
+  const description = withSourcePack(extract.description || text, sourcePack);
+  const taskInstructions = withSourcePack(extract.recommendation || extract.description || text, sourcePack);
 
   const evidence = await prisma.evidence.create({
     data: {
       type: "CHAT",
       title: extract.title || message.subject || "收件信息",
-      chatText: text,
+      chatText: sourcePack || text,
       source: evidenceSource(message.channel),
       status: "IN_PROGRESS",
       category: extract.category,
@@ -506,7 +513,7 @@ export async function processInboxToEventTask(opts: {
     data: {
       caseNo,
       title: extract.title,
-      description: extract.description || text,
+      description,
       category: extract.category || "OTHER",
       severity: extract.severity || "MEDIUM",
       location: extract.location || "待确认",
@@ -570,7 +577,7 @@ export async function processInboxToEventTask(opts: {
     task = await prisma.task.create({
       data: {
         title: `跟進：${created.title}`,
-        instructions: extract.recommendation || created.description,
+        instructions: taskInstructions,
         caseId: created.id,
         assigneeId:
           (await resolveActorId(opts.assigneeId || opts.userId)) || undefined,

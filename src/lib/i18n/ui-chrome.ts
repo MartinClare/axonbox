@@ -167,6 +167,7 @@ export const chromeZh: Dict = {
   "case.reviewNote": "提交核驗",
   "case.editNote": "更新事件資料",
   "case.recommendation": "建議／整改指示",
+  "case.sourcePack": "來源資料",
 
   "inbox.title": "訊息收件",
   "inbox.subtitle": "郵件／WhatsApp／會議紀錄 → 建議個案 → 核准建任務",
@@ -852,6 +853,7 @@ export const chromeEn: Dict = {
   "case.reviewNote": "Submitted for review",
   "case.editNote": "Case details updated",
   "case.recommendation": "Recommendation / instructions",
+  "case.sourcePack": "Source details",
 
   "inbox.title": "Inbox",
   "inbox.subtitle": "Email / WhatsApp / minutes → proposed cases → approve to tasks",

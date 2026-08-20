@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Timeline } from "@/components/Timeline";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/case-loop";
 import { CaseLoopNextPanel, CaseLoopStepper } from "@/components/CaseLoopStepper";
 import { useI18n } from "@/components/I18nProvider";
+import { splitSourcePack } from "@/lib/inbox-source";
 
 type CaseDetail = {
   id: string;
@@ -59,6 +60,33 @@ type CaseDetail = {
   tasks: Array<{ id: string; title: string; status: string; instructions: string | null }>;
   project: { name: string; siteCode: string };
 };
+
+function LinkedSource({ text }: { text: string }) {
+  const re = /(\+852\s?\d{8}|\+[1-9]\d{7,14}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi;
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    if (match.index > last) nodes.push(text.slice(last, match.index));
+    const token = match[0];
+    if (token.includes("@")) {
+      nodes.push(
+        <a key={match.index} href={`mailto:${token}`} className="text-[var(--axon-blue)] underline">
+          {token}
+        </a>,
+      );
+    } else {
+      nodes.push(
+        <a key={match.index} href={`tel:${token.replace(/\s/g, "")}`} className="text-[var(--axon-blue)] underline">
+          {token}
+        </a>,
+      );
+    }
+    last = match.index + token.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <span className="whitespace-pre-wrap break-words">{nodes}</span>;
+}
 
 export default function CaseDetailPage() {
   const { t, locale, categoryLabels, severityLabels, caseStatusLabels } = useI18n();
@@ -338,6 +366,7 @@ export default function CaseDetailPage() {
     },
     locale,
   );
+  const descParts = splitSourcePack(item.description);
 
   function handleLoopAction(action: CaseLoopNextAction) {
     if (action === "assign") {
@@ -666,11 +695,23 @@ export default function CaseDetailPage() {
                     <dd>{item.project.name}</dd>
                   </div>
                 </dl>
-                <p className="mt-4 text-sm leading-relaxed text-slate-700">{item.description}</p>
+                <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                  {descParts.summary}
+                </p>
                 {item.recommendation && (
-                  <p className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+                  <p className="mt-3 whitespace-pre-wrap rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
                     {t("case.recPrefix", { text: item.recommendation })}
                   </p>
+                )}
+                {descParts.source && (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                      {t("case.sourcePack")}
+                    </div>
+                    <div className="mt-2 text-sm leading-relaxed text-slate-700">
+                      <LinkedSource text={descParts.source} />
+                    </div>
+                  </div>
                 )}
               </>
             )}
@@ -856,7 +897,11 @@ export default function CaseDetailPage() {
                   <img src={href!} alt="" className="mb-2 h-36 w-full rounded-lg object-cover bg-slate-100" />
                 ) : (
                   <div className="mb-2 flex h-36 flex-col items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 text-center text-xs text-slate-500">
-                    <span>{e.type === "CHAT" ? t("case.emailBody") : e.mime || e.type}</span>
+                    <span>
+                      {e.type === "CHAT"
+                        ? t("case.sourcePack")
+                        : e.mime || e.type}
+                    </span>
                     {href && e.type !== "CHAT" && (
                       <a href={href} target="_blank" rel="noreferrer" className="text-[var(--axon-blue)]">
                         {t("case.openFile")}
@@ -874,7 +919,11 @@ export default function CaseDetailPage() {
                     ))}
                   </div>
                 )}
-                {e.chatText && <p className="mt-1 line-clamp-3 text-xs text-slate-500">{e.chatText}</p>}
+                {e.chatText && (
+                  <div className="mt-1 text-xs leading-relaxed text-slate-600">
+                    <LinkedSource text={e.chatText} />
+                  </div>
+                )}
                 {isAfter ? (
                   <p className="mt-2 text-xs font-medium text-emerald-700">{t("case.markedAfter")}</p>
                 ) : (

@@ -1524,7 +1524,7 @@ function CardModal({
             <section>
               <h3 className="mb-2 text-sm font-semibold text-slate-700">{t("tasks.desc")}</h3>
               <textarea
-                className="axon-input min-h-[110px] resize-y"
+                className="axon-input min-h-[180px] resize-y whitespace-pre-wrap"
                 placeholder={t("tasks.descPh")}
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
