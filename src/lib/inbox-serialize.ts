@@ -10,6 +10,7 @@ export type InboxFileView = {
   name: string;
   mime: string;
   kind: "image" | "audio" | "doc" | "file";
+  url: string;
   dataUrl?: string;
 };
 
@@ -80,13 +81,14 @@ export function serializeInboxMessage(
   opts?: { includeFileData?: boolean },
 ): InboxListItem {
   const stored = parseInboxAttachments(m.attachments);
-  const files: InboxFileView[] = stored.map((f) => {
+  const files: InboxFileView[] = stored.map((f, i) => {
     const kind = fileKind(f);
     const includeData = Boolean(opts?.includeFileData) && (kind === "image" || kind === "audio");
     return {
       name: f.name,
       mime: f.mime,
       kind,
+      url: `/api/inbox/${m.id}/files/${i}`,
       ...(includeData ? { dataUrl: `data:${f.mime};base64,${f.base64}` } : {}),
     };
   });

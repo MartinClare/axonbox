@@ -30,11 +30,13 @@ import {
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 import { MinutesUploadGroup } from "@/components/MinutesLangSwitch";
 import { useI18n } from "@/components/I18nProvider";
+import { FilePreview } from "@/components/FilePreview";
 
 type InboxFile = {
   name: string;
   mime: string;
   kind: "image" | "audio" | "doc" | "file";
+  url?: string;
   dataUrl?: string;
 };
 
@@ -78,14 +80,25 @@ const channelIcon = {
 
 const POLL_MS = 3000;
 
+function fileSrc(f: InboxFile) {
+  return f.url || f.dataUrl || null;
+}
+
 function keepLoadedFiles(prev: InboxRow | null, next: InboxRow): InboxRow {
   if (
     prev?.id === next.id &&
-    prev.files?.some((f) => f.dataUrl) &&
     (prev.fileCount || 0) === (next.fileCount || 0) &&
-    prev.body === next.body
+    prev.body === next.body &&
+    prev.files?.length
   ) {
-    return { ...next, files: prev.files };
+    return {
+      ...next,
+      files: (next.files || prev.files).map((f, i) => ({
+        ...f,
+        url: f.url || prev.files?.[i]?.url,
+        dataUrl: f.dataUrl || prev.files?.[i]?.dataUrl,
+      })),
+    };
   }
   return next;
 }
@@ -103,6 +116,7 @@ export default function InboxPage() {
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [counts, setCounts] = useState({ pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
   const [selected, setSelected] = useState<InboxRow | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [extract, setExtract] = useState<ExtractResult | null>(null);
   const [filter, setFilter] = useState<string>("ANALYZED");
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -248,8 +262,9 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selected) return;
-    const loaded = selected.files?.filter((f) => f.dataUrl).length || 0;
-    if ((selected.fileCount || 0) === 0 || loaded >= (selected.fileCount || 0)) return;
+    const files = selected.files || [];
+    if ((selected.fileCount || 0) === 0) return;
+    if (files.length >= (selected.fileCount || 0) && files.every((f) => f.url || f.dataUrl)) return;
     let cancelled = false;
     apiFetch<InboxRow>(`/api/inbox/${selected.id}`).then((detail) => {
       if (cancelled || !detail.ok || !detail.data) return;
@@ -322,6 +337,7 @@ export default function InboxPage() {
   }
 
   async function selectRow(row: InboxRow) {
+    setPreviewIndex(null);
     setSelected(row);
   }
 
@@ -859,41 +875,38 @@ export default function InboxPage() {
                 {(selected.files || []).length > 0 && (
                   <div className="mt-3 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
-                      {selected.files
-                        ?.filter((f) => f.kind === "image" && f.dataUrl)
-                        .map((f) => (
-                          <a
-                            key={f.name + f.dataUrl!.slice(-12)}
-                            href={f.dataUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="overflow-hidden rounded-xl ring-1 ring-[var(--axon-line)]"
+                      {selected.files?.map((f, idx) => {
+                        const src = fileSrc(f);
+                        const image = f.kind === "image" && src;
+                        return (
+                          <button
+                            key={`${f.name}-${idx}`}
+                            type="button"
+                            onClick={() => setPreviewIndex(idx)}
+                            className="overflow-hidden rounded-xl bg-slate-50 text-left ring-1 ring-[var(--axon-line)] hover:ring-[var(--axon-blue)]"
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={f.dataUrl}
-                              alt={f.name}
-                              className="h-40 w-full object-cover"
-                            />
-                          </a>
-                        ))}
+                            {image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={src} alt={f.name} className="h-40 w-full object-cover" />
+                            ) : (
+                              <div className="flex h-28 flex-col items-center justify-center gap-1 px-2 text-slate-500">
+                                {f.kind === "audio" ? (
+                                  <span className="text-xs font-medium">{t("capture.voice")}</span>
+                                ) : (
+                                  <FileText size={22} />
+                                )}
+                                <span className="line-clamp-2 w-full text-center text-[11px] text-slate-600">
+                                  {f.name}
+                                </span>
+                              </div>
+                            )}
+                            {image && (
+                              <div className="truncate px-2 py-1 text-[11px] text-slate-500">{f.name}</div>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                    {selected.files
-                      ?.filter((f) => f.kind === "audio" && f.dataUrl)
-                      .map((f) => (
-                        <audio key={f.name} controls className="w-full" src={f.dataUrl} />
-                      ))}
-                    {selected.files
-                      ?.filter((f) => f.kind !== "image" && f.kind !== "audio")
-                      .map((f) => (
-                        <div
-                          key={f.name}
-                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"
-                        >
-                          <FileText size={14} />
-                          {f.name}
-                        </div>
-                      ))}
                   </div>
                 )}
               </div>
@@ -976,6 +989,19 @@ export default function InboxPage() {
       </div>
 
       {minutesProgress && <MinutesProgressOverlay progress={minutesProgress} />}
+
+      {previewIndex != null && selected?.files?.[previewIndex] && (
+        <FilePreview
+          items={(selected.files || []).map((f) => ({
+            name: f.name,
+            src: fileSrc(f),
+            mime: f.mime,
+          }))}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+        />
+      )}
     </div>
   );
 }

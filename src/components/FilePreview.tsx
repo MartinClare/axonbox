@@ -1,0 +1,140 @@
+"use client";
+
+import { useEffect } from "react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Paperclip, X } from "lucide-react";
+import { isProbablyImage } from "@/lib/media";
+import { useI18n } from "@/components/I18nProvider";
+
+export type PreviewFile = {
+  name: string;
+  src: string | null;
+  mime?: string | null;
+};
+
+function isImage(f: PreviewFile) {
+  return isProbablyImage({ type: f.mime || undefined, name: f.name });
+}
+
+function isPdf(f: PreviewFile) {
+  return (f.mime || "").includes("pdf") || /\.pdf($|\?)/i.test(f.name) || /\.pdf($|\?)/i.test(f.src || "");
+}
+
+function isVideo(f: PreviewFile) {
+  return (f.mime || "").startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(f.name);
+}
+
+function isAudio(f: PreviewFile) {
+  return (f.mime || "").startsWith("audio/") || /\.(mp3|wav|webm|m4a|ogg|opus)$/i.test(f.name);
+}
+
+export function FilePreview({
+  items,
+  index,
+  onIndexChange,
+  onClose,
+}: {
+  items: PreviewFile[];
+  index: number;
+  onIndexChange: (index: number) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const item = items[index];
+  const src = item?.src || null;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") onIndexChange(Math.max(0, index - 1));
+      if (e.key === "ArrowRight") onIndexChange(Math.min(items.length - 1, index + 1));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, items.length, onClose, onIndexChange]);
+
+  if (!item) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black/85 p-3"
+      role="dialog"
+      aria-label={t("tasks.preview")}
+      onClick={onClose}
+    >
+      <div className="flex shrink-0 items-center gap-2 text-white" onClick={(e) => e.stopPropagation()}>
+        <div className="min-w-0 flex-1 truncate text-sm font-medium">
+          {item.name}
+          {items.length > 1 ? `  ${index + 1}/${items.length}` : ""}
+        </div>
+        {src && (
+          <>
+            <a
+              href={src}
+              download={item.name}
+              className="rounded-lg p-2 hover:bg-white/10"
+              title={t("tasks.download")}
+            >
+              <Download size={18} />
+            </a>
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg p-2 hover:bg-white/10"
+              title={t("tasks.openFile")}
+            >
+              <ExternalLink size={18} />
+            </a>
+          </>
+        )}
+        <button type="button" className="rounded-lg p-2 hover:bg-white/10" onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {items.length > 1 && (
+          <button
+            type="button"
+            className="absolute left-1 rounded-full bg-black/40 p-2 text-white hover:bg-black/60 disabled:opacity-30"
+            onClick={() => onIndexChange(Math.max(0, index - 1))}
+            disabled={index === 0}
+          >
+            <ChevronLeft size={22} />
+          </button>
+        )}
+        <div className="max-h-full max-w-full px-12">
+          {!src ? (
+            <p className="text-sm text-white/70">{item.name}</p>
+          ) : isImage(item) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={item.name} className="max-h-[80vh] max-w-full rounded object-contain" />
+          ) : isPdf(item) ? (
+            <iframe title={item.name} src={src} className="h-[80vh] w-[min(100vw-4rem,900px)] rounded bg-white" />
+          ) : isVideo(item) ? (
+            <video src={src} controls className="max-h-[80vh] max-w-full rounded" />
+          ) : isAudio(item) ? (
+            <audio src={src} controls className="w-[min(100%,480px)]" />
+          ) : (
+            <div className="rounded-xl bg-white p-6 text-center text-slate-700">
+              <Paperclip className="mx-auto mb-3 text-slate-400" size={28} />
+              <div className="mb-3 text-sm font-medium">{item.name}</div>
+              <a href={src} target="_blank" rel="noreferrer" className="text-sm text-[var(--axon-blue)]">
+                {t("tasks.openFile")}
+              </a>
+            </div>
+          )}
+        </div>
+        {items.length > 1 && (
+          <button
+            type="button"
+            className="absolute right-1 rounded-full bg-black/40 p-2 text-white hover:bg-black/60 disabled:opacity-30"
+            onClick={() => onIndexChange(Math.min(items.length - 1, index + 1))}
+            disabled={index === items.length - 1}
+          >
+            <ChevronRight size={22} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
