@@ -9,13 +9,13 @@ import {
 export const maxDuration = 120;
 
 /**
- * YCloud WhatsApp webhook (coexist / Cloud API).
+ * YCloud WhatsApp Cloud API webhook (dedicated intake number).
  *
  * YCloud Console → Developers → Webhooks:
  *   URL: https://your-host/api/connectors/whatsapp/webhook
  *   Events: whatsapp.inbound_message.received
- *           (+ coexist: whatsapp.smb.message.echoes, history, app.state.sync — ACK only)
- *   Env: YCLOUD_API_KEY, YCLOUD_WEBHOOK_SECRET, WHATSAPP_DISPLAY_NUMBER
+ *   Env: YCLOUD_API_KEY, YCLOUD_WEBHOOK_SECRET
+ *   Intake number (CS only, not shown in UI): WHATSAPP_DISPLAY_NUMBER=+85253688279
  */
 export async function GET() {
   return NextResponse.json({ ok: true, provider: "ycloud", connector: "whatsapp" });

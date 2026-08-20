@@ -258,7 +258,7 @@ export async function parseYCloudInboundEvent(
 }
 
 /**
- * WhatsApp connector via YCloud (coexist / Cloud API).
+ * WhatsApp connector via YCloud Cloud API (dedicated intake number).
  * Webhook: POST /api/connectors/whatsapp/webhook
  */
 export const whatsappConnector: InboxConnector = {
