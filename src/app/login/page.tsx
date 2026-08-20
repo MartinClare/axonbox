@@ -29,6 +29,11 @@ export default function LoginPage() {
     }
     const cb = sp.get("callbackUrl");
     if (cb && cb.startsWith("/")) setCallbackUrl(cb);
+    else {
+      const mobile =
+        window.innerWidth < 768 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+      setCallbackUrl(mobile ? "/m" : "/");
+    }
 
     let cancelled = false;
     async function ping() {

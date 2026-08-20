@@ -2,7 +2,7 @@
   "name": "AxonCase",
   "short_name": "AxonCase",
   "description": "工地行政 AI · 拍照即知漏洞與進度",
-  "start_url": "/open?source=pwa",
+  "start_url": "/m",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "browser"],
@@ -34,21 +34,21 @@
   ],
   "shortcuts": [
     {
-      "name": "場地分析",
-      "short_name": "分析",
-      "url": "/capture",
+      "name": "拍照存證",
+      "short_name": "拍照",
+      "url": "/m/capture",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "訊息收件",
-      "short_name": "收件",
-      "url": "/inbox",
+      "name": "WhatsApp",
+      "short_name": "WhatsApp",
+      "url": "/m/inbox",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "事件",
       "short_name": "事件",
-      "url": "/cases",
+      "url": "/m/cases",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
