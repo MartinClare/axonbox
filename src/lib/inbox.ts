@@ -41,6 +41,12 @@ function evidenceSource(channel: string) {
   return "UPLOAD";
 }
 
+function extractModeForChannel(channel: string): "email" | "whatsapp" | "site" {
+  if (channel === "EMAIL") return "email";
+  if (channel === "WHATSAPP" || channel === "WECHAT") return "whatsapp";
+  return "site";
+}
+
 async function resolveSenderByPhone(phoneRaw?: string | null) {
   const phone = normalizePhone(phoneRaw);
   if (!phone || phone.length < 6) return null;
@@ -408,7 +414,7 @@ export async function analyzeInboxMessage(
     imageBase64,
     imageMime,
     filename: `${message.channel}-${message.sender}`,
-    mode: message.channel === "EMAIL" ? "email" : "site",
+    mode: extractModeForChannel(message.channel),
   });
 
   const needDoc =
@@ -433,7 +439,7 @@ export async function analyzeInboxMessage(
         imageBase64,
         imageMime,
         filename: `${message.channel}-${message.sender}`,
-        mode: message.channel === "EMAIL" ? "email" : "site",
+        mode: extractModeForChannel(message.channel),
         documentNote: excerpts.join("\n\n"),
       });
     }

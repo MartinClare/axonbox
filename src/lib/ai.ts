@@ -54,12 +54,69 @@ function normalizeTags(raw: unknown, extras: string[] = []): string[] {
   return out.slice(0, 12);
 }
 
+const SITE_INVENTION =
+  /圍欄|護欄|圍板|開挖|挖掘|洞口|鋼筋|裂縫|xpms|hyd|許可證|道路挖掘|警示燈|高空作業|臨時交通|公共道路/i;
+const PAPERWORK_INVENTION = /xpms|hyd|xp申請|挖掘許可|an申請|道路挖掘許可/i;
+
+function sourceLooksThin(text?: string) {
+  const t = (text || "")
+    .replace(/\[轉發\]/g, "")
+    .replace(/\[圖片\]/g, "")
+    .replace(/\[語音\]/g, "")
+    .replace(/\[文件\]/g, "")
+    .replace(/主题：/g, "")
+    .trim();
+  return t.length < 80;
+}
+
+function groundedFallback(text?: string): ExtractResult {
+  const line = (text || "")
+    .replace(/\[轉發\]\s*/g, "")
+    .replace(/主题：/g, "")
+    .trim()
+    .slice(0, 120);
+  const title = line || "待補充的現場訊息";
+  return {
+    title,
+    description: line || "訊息過短，無法判斷具體現場問題。",
+    category: "OTHER",
+    severity: "LOW",
+    location: "待確認",
+    recommendation: "請補充現場照片或原文詳情後再核准；不要把此則當成已確認的安全事故。",
+    suggestedAssigneeRole: "SUPERVISOR",
+    progressPct: 0,
+    workActivity: "待確認",
+    findings: [],
+    siteSummary: "僅有簡短訊息，尚未構成可執行個案。",
+    confidence: 0.2,
+    mock: false,
+    tags: ["待補充"],
+    analysisMode: "discover",
+  };
+}
+
+function extractDriftsFromSource(
+  extract: ExtractResult,
+  source: string,
+  hasImage: boolean,
+): boolean {
+  const blob = [extract.title, extract.description, extract.siteSummary, extract.recommendation, extract.location]
+    .filter(Boolean)
+    .join("\n");
+  if (PAPERWORK_INVENTION.test(blob) && !PAPERWORK_INVENTION.test(source)) return true;
+  if (hasImage) return false;
+  return SITE_INVENTION.test(blob) && !SITE_INVENTION.test(source);
+}
+
 function mockExtract(
   text?: string,
   filename?: string,
   analysisMode: "record" | "discover" = "discover",
 ): ExtractResult {
   const blob = `${text || ""} ${filename || ""}`.toLowerCase();
+  if (sourceLooksThin(text) && !SITE_INVENTION.test(blob)) {
+    return { ...groundedFallback(text), mock: true };
+  }
   let category: CaseCategory = "OTHER";
   let severity: Severity = "MEDIUM";
   let title = analysisMode === "record" ? "現場現況記錄" : "現場狀況需跟進";
@@ -264,14 +321,17 @@ export async function extractFromInput(input: {
   imageBase64?: string;
   imageMime?: string;
   filename?: string;
-  mode?: "site" | "email";
+  mode?: "site" | "email" | "whatsapp";
   analysisMode?: "record" | "discover";
   documentNote?: string;
 }): Promise<ExtractResult> {
   const analysisMode = input.analysisMode === "record" ? "record" : "discover";
+  const hasImage = Boolean(input.imageBase64);
+  const source = `${input.text || ""} ${input.filename || ""} ${input.documentNote || ""}`;
 
   if (!hasAIKey()) {
-    return mockExtract(input.text, input.filename, analysisMode);
+    const mock = mockExtract(input.text, input.filename, analysisMode);
+    return extractDriftsFromSource(mock, source, hasImage) ? groundedFallback(input.text) : mock;
   }
 
   const model = getAIModel();
@@ -282,6 +342,15 @@ export async function extractFromInput(input: {
 - 不要把 PDF／Word 全文、條款或工作清單寫進 description 或 recommendation。
 - 若有「附件摘錄」，只用來確認這是什麼個案（標題、類別、地點、嚴重度）。最多在 description 加一句「附件為…」。
 - 不要執行或展開附件裡提到的所有事項。
+`
+      : "";
+  const whatsappRules =
+    input.mode === "whatsapp"
+      ? `
+這是 WhatsApp 轉發收件。必須以訊息正文（及照片，如有）判斷個案。
+- 短訊／「有 comment／請跟進／RMO」之類：title 用原意改寫，category=OTHER，findings=[]。
+- 沒有照片時，禁止描述圍欄、開挖、洞口、道路、HyD、XPMS 或任何未在文字出現的現場。
+- 不要當巡檢清單逐項檢查。
 `
       : "";
   const docNote = input.documentNote
@@ -296,9 +365,9 @@ export async function extractFromInput(input: {
 - category 偏向 PROGRESS 或 OTHER（除非文字明確是其他類）
 `;
   const discoverRules = `
-模式：發現問題（Discover）。找出安全漏洞、質量缺陷、進度風險，並提出可執行整改建議。
-重點檢查：圍欄／防護、洞口未封、高空／PPE、鋼筋外露、裂縫、材料堆放、通道阻礙、明顯進度延誤、臨時交通／圍板跡象。
-並在 recommendation 中提示是否可能涉及公共道路挖掘／XP／AN（若無關則勿硬套）。
+模式：發現問題（Discover）。僅當文字或照片明確顯示缺陷時才列 findings。
+沒有明確缺陷時：category=OTHER，severity=LOW，findings=[]，title／description 必須貼近原文。
+禁止主動套用巡檢清單（圍欄、洞口、鋼筋、HyD、XPMS、公共道路挖掘）。除非原文或照片清楚出現，否則不要寫這些。
 `;
 
   try {
@@ -306,25 +375,25 @@ export async function extractFromInput(input: {
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       {
         type: "text",
-        text: `你是 AxonCase 資深工地巡檢／香港工程顧問 AI（熟悉 HyD XPMS／道路挖掘許可常識）。
-${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
+        text: `你是 AxonCase 收件分析助手。只根據用戶提供的文字與照片作答，不要用工地常識補完不存在的事故。
+${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discoverRules}
 只回傳純 JSON，文字必須使用繁體中文：
 {
-  "title":"一句話標題",
-  "description":"現場狀況摘要",
+  "title":"一句話標題（必須反映原文）",
+  "description":"根據原文／照片的摘要，不要添加未出現的情節",
   "category":"SAFETY|QUALITY|PROGRESS|ENVIRONMENT|OTHER",
   "severity":"HIGH|MEDIUM|LOW",
-  "location":"推測位置",
-  "recommendation":"具體下一步或備註",
+  "location":"原文有才填，否則待確認",
+  "recommendation":"具體下一步或請對方補充",
   "suggestedAssigneeRole":"SUPERVISOR|SUBCONTRACTOR",
   "progressPct":0到100的整數,
-  "workActivity":"主要工序",
-  "siteSummary":"一句話場地判斷",
+  "workActivity":"主要工序或待確認",
+  "siteSummary":"一句話，必須能對回原文",
   "confidence":0到1,
   "tags":["短標籤1","短標籤2"],
   "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}]
 }
-tags：3～8 個短繁中標籤（區域、工序、物件、風險類型），不要加 #。
+tags：3～8 個短繁中標籤，必須來自原文或照片，不要加 #。
 文字補充：${input.text || "(無)"}${docNote}`,
       },
     ];
@@ -347,10 +416,15 @@ tags：3～8 個短繁中標籤（區域、工序、物件、風險類型），�
     if (!parsed.title && !parsed.description && !parsed.findings?.length) {
       throw new Error(`Empty AI response: ${raw.slice(0, 200)}`);
     }
-    return normalizeExtract(parsed, input, model, analysisMode);
+    const extract = normalizeExtract(parsed, input, model, analysisMode);
+    if (extractDriftsFromSource(extract, source, hasImage)) {
+      return groundedFallback(input.text);
+    }
+    return extract;
   } catch (err) {
     console.error("AI extract failed, fallback mock", err);
-    return mockExtract(input.text, input.filename, analysisMode);
+    const mock = mockExtract(input.text, input.filename, analysisMode);
+    return extractDriftsFromSource(mock, source, hasImage) ? groundedFallback(input.text) : mock;
   }
 }
 
