@@ -50,6 +50,7 @@ type InboxRow = {
   status: string;
   aiJson: string | null;
   receivedAt: string;
+  updatedAt?: string;
   case?: { id: string; caseNo: string; title: string; status: string } | null;
   fileCount?: number;
   hasImage?: boolean;
@@ -74,6 +75,20 @@ const channelIcon = {
   WECHAT: MessageCircle,
   MANUAL: Inbox,
 } as const;
+
+const POLL_MS = 3000;
+
+function keepLoadedFiles(prev: InboxRow | null, next: InboxRow): InboxRow {
+  if (
+    prev?.id === next.id &&
+    prev.files?.some((f) => f.dataUrl) &&
+    (prev.fileCount || 0) === (next.fileCount || 0) &&
+    prev.body === next.body
+  ) {
+    return { ...next, files: prev.files };
+  }
+  return next;
+}
 
 export default function InboxPage() {
   const router = useRouter();
@@ -111,9 +126,17 @@ export default function InboxPage() {
   const [from, setFrom] = useState("");
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const skipArriveRef = useRef(true);
+  const reqIdRef = useRef(0);
+  const countsRef = useRef(counts);
+  const busyRef = useRef(busy);
+  countsRef.current = counts;
+  busyRef.current = busy;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     const q = filter ? `?status=${filter}` : "";
+    const my = ++reqIdRef.current;
     const res = await apiFetch<{
       messages?: InboxRow[];
       counts?: typeof counts;
@@ -128,28 +151,90 @@ export default function InboxPage() {
         whatsappNumber?: string | null;
       };
     }>(`/api/inbox${q}`);
+    if (my !== reqIdRef.current) return;
     if (!res.ok) {
-      setRows([]);
-      setSelected(null);
-      setExtract(null);
+      if (!opts?.silent) {
+        setRows([]);
+        setSelected(null);
+        setExtract(null);
+      }
       return;
     }
     const list = res.data?.messages || [];
+    const nextCounts = res.data?.counts || {
+      pending: 0,
+      analyzed: 0,
+      processed: 0,
+      dismissed: 0,
+    };
+    const pendingUp = nextCounts.pending > (countsRef.current.pending || 0);
+    const firstPaint = skipArriveRef.current;
+    const arrived = list.filter((r) => !knownIdsRef.current.has(r.id));
+    knownIdsRef.current = new Set(list.map((r) => r.id));
+    skipArriveRef.current = false;
+
     setRows(list);
-    setCounts(res.data?.counts || { pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
+    setCounts(nextCounts);
     if (res.data?.inbound) setInbound(res.data.inbound);
+
+    if (!firstPaint && pendingUp && filter === "ANALYZED") {
+      setMsg(t("inbox.analyzingNew"));
+      window.setTimeout(() => setMsg(""), 2500);
+      skipArriveRef.current = true;
+      knownIdsRef.current = new Set();
+      setFilter("PENDING");
+      return;
+    }
+
+    let followAnalyzed = false;
     setSelected((prev) => {
+      if (prev && !list.some((r) => r.id === prev.id) && filter === "PENDING") {
+        followAnalyzed = true;
+        return prev;
+      }
+      if (!firstPaint && arrived.length && !busyRef.current) {
+        return keepLoadedFiles(prev, arrived[0]);
+      }
       const next = (prev && list.find((r) => r.id === prev.id)) || list[0] || null;
       if (!next) return null;
-      if (prev?.id === next.id && prev.files?.some((f) => f.dataUrl)) {
-        return { ...next, files: prev.files };
-      }
-      return next;
+      return keepLoadedFiles(prev, next);
     });
-  }, [filter]);
+    if (followAnalyzed) {
+      skipArriveRef.current = true;
+      knownIdsRef.current = new Set();
+      setFilter("ANALYZED");
+      return;
+    }
+
+    if (!firstPaint && arrived.length && filter !== "ANALYZED") {
+      setMsg(t("inbox.newArrived", { n: arrived.length }));
+      window.setTimeout(() => setMsg(""), 2500);
+    }
+  }, [filter, t]);
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const tick = () => {
+      if (!cancelled && document.visibilityState === "visible") {
+        void load({ silent: true });
+      }
+    };
+
+    void load();
+    timer = setInterval(tick, POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -158,7 +243,13 @@ export default function InboxPage() {
       return;
     }
     applyExtract(selected);
-    if ((selected.fileCount || 0) === 0 || selected.files?.some((f) => f.dataUrl)) return;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, selected?.aiJson]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const loaded = selected.files?.filter((f) => f.dataUrl).length || 0;
+    if ((selected.fileCount || 0) === 0 || loaded >= (selected.fileCount || 0)) return;
     let cancelled = false;
     apiFetch<InboxRow>(`/api/inbox/${selected.id}`).then((detail) => {
       if (cancelled || !detail.ok || !detail.data) return;
@@ -168,9 +259,8 @@ export default function InboxPage() {
     return () => {
       cancelled = true;
     };
-    // Load files once per selected message; list payloads omit image bytes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id]);
+  }, [selected?.id, selected?.fileCount, selected?.receivedAt]);
 
   function flash(text: string) {
     setMsg(text);
@@ -311,6 +401,8 @@ export default function InboxPage() {
   }
 
   function setFilterTab(key: string) {
+    skipArriveRef.current = true;
+    knownIdsRef.current = new Set();
     setFilter(key);
     setChecked(new Set());
   }

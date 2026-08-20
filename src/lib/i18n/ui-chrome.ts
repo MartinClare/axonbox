@@ -234,6 +234,8 @@ export const chromeZh: Dict = {
   "inbox.attachment": "附件",
   "inbox.noText": "沒有文字",
   "inbox.mock": "示範分析",
+  "inbox.newArrived": "收到 {n} 則新訊息",
+  "inbox.analyzingNew": "收到新訊息，正在分析…",
 
   "tasks.title": "任務管理",
   "tasks.subtitle": "會議行動 · 看板 · 關聯事件",
@@ -921,6 +923,8 @@ export const chromeEn: Dict = {
   "inbox.attachment": "Attachment",
   "inbox.noText": "No text",
   "inbox.mock": "Demo analysis",
+  "inbox.newArrived": "{n} new message(s)",
+  "inbox.analyzingNew": "New message received — analysing…",
 
   "tasks.title": "Tasks",
   "tasks.subtitle": "Meeting actions · board · linked cases",

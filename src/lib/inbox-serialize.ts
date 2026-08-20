@@ -22,6 +22,7 @@ export type InboxListItem = {
   status: string;
   aiJson: string | null;
   receivedAt: Date | string;
+  updatedAt?: Date | string;
   case?: { id: string; caseNo: string; title: string; status: string } | null;
   mailbox: string;
   forwardedByName: string | null;
@@ -40,6 +41,7 @@ type InboxRecord = {
   status: string;
   aiJson: string | null;
   receivedAt: Date;
+  updatedAt?: Date;
   rawPayload?: string | null;
   attachments?: string | null;
   case?: { id: string; caseNo: string; title: string; status: string } | null;
@@ -98,6 +100,7 @@ export function serializeInboxMessage(
     status: m.status,
     aiJson: m.aiJson,
     receivedAt: m.receivedAt,
+    updatedAt: m.updatedAt,
     case: m.case || null,
     mailbox: mailboxFromRaw(m.rawPayload) || m.forwardedBy?.inboundKey || "",
     forwardedByName: m.forwardedBy?.name || null,
