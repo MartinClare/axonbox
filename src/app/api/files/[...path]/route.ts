@@ -19,7 +19,10 @@ const MIME: Record<string, string> = {
   ".bmp": "image/bmp",
   ".heic": "image/heic",
   ".heif": "image/heif",
-  ".webm": "audio/webm",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
 };
@@ -49,6 +52,7 @@ export async function GET(
   const inline =
     type.startsWith("image/") ||
     type.startsWith("audio/") ||
+    type.startsWith("video/") ||
     ext === ".pdf" ||
     ext === ".html";
   return new NextResponse(new Uint8Array(buf), {

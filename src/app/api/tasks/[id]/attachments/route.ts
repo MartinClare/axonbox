@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/session";
 import { saveUpload } from "@/lib/upload";
 
 const MAX_BYTES = 12_000_000;
-const MAX_FILES = 20;
+const MAX_FILES = 50;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,30 +40,46 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const form = await req.formData();
-  const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) {
+  const files = form
+    .getAll("file")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) {
     return NextResponse.json({ error: "file required" }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
+  if (task._count.attachments + files.length > MAX_FILES) {
+    return NextResponse.json({ error: "too many attachments" }, { status: 400 });
+  }
+  if (files.some((f) => f.size > MAX_BYTES)) {
     return NextResponse.json({ error: "file too large" }, { status: 400 });
   }
-  const saved = await saveUpload(file, "tasks");
-  const image = (saved.mime || "").startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(file.name);
-  const hasCover = await prisma.taskAttachment.findFirst({
-    where: { taskId: id, isCover: true },
-    select: { id: true },
-  });
-  const created = await prisma.taskAttachment.create({
-    data: {
-      taskId: id,
-      name: saved.originalName || file.name,
-      filePath: saved.filePath,
-      mime: saved.mime,
-      size: file.size,
-      isCover: image && !hasCover,
-    },
-  });
-  return NextResponse.json(created, { status: 201 });
+
+  let hasCover = Boolean(
+    await prisma.taskAttachment.findFirst({
+      where: { taskId: id, isCover: true },
+      select: { id: true },
+    }),
+  );
+  const created = [];
+  for (const file of files) {
+    const saved = await saveUpload(file, "tasks");
+    const image =
+      (saved.mime || "").startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(file.name);
+    const isCover = image && !hasCover;
+    if (isCover) hasCover = true;
+    created.push(
+      await prisma.taskAttachment.create({
+        data: {
+          taskId: id,
+          name: saved.originalName || file.name,
+          filePath: saved.filePath,
+          mime: saved.mime,
+          size: file.size,
+          isCover,
+        },
+      }),
+    );
+  }
+  return NextResponse.json({ attachments: created }, { status: 201 });
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {

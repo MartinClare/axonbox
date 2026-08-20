@@ -316,6 +316,10 @@ export const chromeZh: Dict = {
   "tasks.attaching": "上傳中…",
   "tasks.dropFiles": "拖放檔案到這裡附加",
   "tasks.tooLarge": "檔案超過 12MB",
+  "tasks.tooManyAttachments": "每張卡片最多 50 個附件",
+  "tasks.preview": "預覽附件",
+  "tasks.openFile": "開啟原檔",
+  "tasks.download": "下載",
 
   "capture.title": "拍一張，看清場地",
   "capture.photo": "照片",
@@ -1021,6 +1025,10 @@ export const chromeEn: Dict = {
   "tasks.attaching": "Uploading…",
   "tasks.dropFiles": "Drop files here to attach",
   "tasks.tooLarge": "File is over 12MB",
+  "tasks.tooManyAttachments": "Up to 50 attachments per card",
+  "tasks.preview": "Preview attachment",
+  "tasks.openFile": "Open original",
+  "tasks.download": "Download",
 
   "capture.title": "Capture the site",
   "capture.photo": "Photo",

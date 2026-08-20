@@ -22,6 +22,11 @@ import {
   Archive,
   Calendar,
   CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  ExternalLink,
   FileUp,
   Link2,
   Maximize2,
@@ -30,14 +35,13 @@ import {
   MoreHorizontal,
   Paperclip,
   Plus,
-  Copy,
   Search,
   Trash2,
   UserPlus,
   UserRound,
   X,
 } from "lucide-react";
-import { mediaUrl } from "@/lib/media";
+import { mediaUrl, isProbablyImage } from "@/lib/media";
 import { STATUS_COLORS, cn, daysRemaining, formatDay } from "@/lib/labels";
 import { useI18n } from "@/components/I18nProvider";
 import { apiFetch, asArray } from "@/lib/api-client";
@@ -198,10 +202,28 @@ function dueTone(task: Task) {
 }
 
 function coverImage(task: Task) {
-  const att = task.attachments?.find(
-    (a) => a.isCover && a.filePath && (a.mime?.startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(a.name)),
-  );
+  const att = task.attachments?.find((a) => a.isCover && isImageAttachment(a) && a.filePath);
   return att ? mediaUrl(att.filePath) : null;
+}
+
+function attachmentSrc(a: TaskAttachment) {
+  return a.url || mediaUrl(a.filePath);
+}
+
+function isImageAttachment(a: TaskAttachment) {
+  return isProbablyImage({ type: a.mime || undefined, name: a.name });
+}
+
+function isPdfAttachment(a: TaskAttachment) {
+  return (a.mime || "").includes("pdf") || /\.pdf$/i.test(a.name) || /\.pdf($|\?)/i.test(a.url || "");
+}
+
+function isVideoAttachment(a: TaskAttachment) {
+  return (a.mime || "").startsWith("video/") || /\.(mp4|webm|mov|m4v)$/i.test(a.name);
+}
+
+function isAudioAttachment(a: TaskAttachment) {
+  return (a.mime || "").startsWith("audio/") || /\.(mp3|wav|webm|m4a|ogg)$/i.test(a.name);
 }
 
 function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
@@ -1485,6 +1507,116 @@ function MinutesPreviewModal({
   );
 }
 
+function AttachmentPreview({
+  items,
+  index,
+  onIndexChange,
+  onClose,
+}: {
+  items: TaskAttachment[];
+  index: number;
+  onIndexChange: (index: number) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const item = items[index];
+  const src = attachmentSrc(item);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft") onIndexChange(Math.max(0, index - 1));
+      if (e.key === "ArrowRight") onIndexChange(Math.min(items.length - 1, index + 1));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, items.length, onClose, onIndexChange]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col bg-black/85 p-3"
+      role="dialog"
+      aria-label={t("tasks.preview")}
+      onClick={onClose}
+    >
+      <div className="flex shrink-0 items-center gap-2 text-white" onClick={(e) => e.stopPropagation()}>
+        <div className="min-w-0 flex-1 truncate text-sm font-medium">
+          {item.name}
+          {items.length > 1 ? `  ${index + 1}/${items.length}` : ""}
+        </div>
+        {src && (
+          <>
+            <a
+              href={src}
+              download={item.name}
+              className="rounded-lg p-2 hover:bg-white/10"
+              title={t("tasks.download")}
+            >
+              <Download size={18} />
+            </a>
+            <a
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg p-2 hover:bg-white/10"
+              title={t("tasks.openFile")}
+            >
+              <ExternalLink size={18} />
+            </a>
+          </>
+        )}
+        <button type="button" className="rounded-lg p-2 hover:bg-white/10" onClick={onClose}>
+          <X size={18} />
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {items.length > 1 && (
+          <button
+            type="button"
+            className="absolute left-1 rounded-full bg-black/40 p-2 text-white hover:bg-black/60"
+            onClick={() => onIndexChange(Math.max(0, index - 1))}
+            disabled={index === 0}
+          >
+            <ChevronLeft size={22} />
+          </button>
+        )}
+        <div className="max-h-full max-w-full px-12">
+          {!src ? (
+            <p className="text-sm text-white/70">{item.name}</p>
+          ) : isImageAttachment(item) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={item.name} className="max-h-[80vh] max-w-full rounded object-contain" />
+          ) : isPdfAttachment(item) ? (
+            <iframe title={item.name} src={src} className="h-[80vh] w-[min(100vw-4rem,900px)] rounded bg-white" />
+          ) : isVideoAttachment(item) ? (
+            <video src={src} controls className="max-h-[80vh] max-w-full rounded" />
+          ) : isAudioAttachment(item) ? (
+            <audio src={src} controls className="w-[min(100%,480px)]" />
+          ) : (
+            <div className="rounded-xl bg-white p-6 text-center text-slate-700">
+              <Paperclip className="mx-auto mb-3 text-slate-400" size={28} />
+              <div className="mb-3 text-sm font-medium">{item.name}</div>
+              <a href={src} target="_blank" rel="noreferrer" className="text-sm text-[var(--axon-blue)]">
+                {t("tasks.openFile")}
+              </a>
+            </div>
+          )}
+        </div>
+        {items.length > 1 && (
+          <button
+            type="button"
+            className="absolute right-1 rounded-full bg-black/40 p-2 text-white hover:bg-black/60"
+            onClick={() => onIndexChange(Math.min(items.length - 1, index + 1))}
+            disabled={index === items.length - 1}
+          >
+            <ChevronRight size={22} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CardModal({
   task,
   users,
@@ -1520,6 +1652,7 @@ function CardModal({
   const [showLink, setShowLink] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [attachError, setAttachError] = useState("");
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const coverMeta = labelMeta(cover);
   const coverSrc = coverImage({ ...task, attachments });
 
@@ -1538,8 +1671,8 @@ function CardModal({
 
   useEffect(() => {
     function onPaste(e: ClipboardEvent) {
-      const files = e.clipboardData?.files;
-      if (!files?.length) return;
+      const files = Array.from(e.clipboardData?.files || []);
+      if (!files.length) return;
       e.preventDefault();
       void addFiles(files);
     }
@@ -1549,25 +1682,37 @@ function CardModal({
   }, [task.id]);
 
   async function addFiles(files: FileList | File[] | null) {
-    if (!files || files.length === 0) return;
+    const list = Array.from(files || []).filter((f) => f.size > 0);
+    if (list.length === 0) return;
+    if (attachments.length + list.length > 50) {
+      setAttachError(t("tasks.tooManyAttachments"));
+      return;
+    }
     setAttachBusy(true);
     setAttachError("");
-    for (const file of Array.from(files)) {
+    const form = new FormData();
+    let skipped = false;
+    for (const file of list) {
       if (file.size > 12_000_000) {
-        setAttachError(t("tasks.tooLarge"));
+        skipped = true;
         continue;
       }
-      const form = new FormData();
       form.append("file", file);
-      const res = await apiFetch<TaskAttachment>(`/api/tasks/${task.id}/attachments`, {
-        method: "POST",
-        body: form,
-      });
-      if (res.ok && res.data) {
-        setAttachments((prev) => [...prev, res.data]);
-      } else if (!res.ok) {
-        setAttachError(res.error);
-      }
+    }
+    if (skipped) setAttachError(t("tasks.tooLarge"));
+    if (![...form.keys()].includes("file")) {
+      setAttachBusy(false);
+      return;
+    }
+    const res = await apiFetch<{ attachments?: TaskAttachment[] }>(`/api/tasks/${task.id}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    if (res.ok) {
+      const rows = asArray<TaskAttachment>(res.data.attachments);
+      if (rows.length) setAttachments((prev) => [...prev, ...rows]);
+    } else {
+      setAttachError(res.error);
     }
     setAttachBusy(false);
     await onReload();
@@ -1647,6 +1792,7 @@ function CardModal({
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-12">
       <div
         className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-[#f4f5f7] shadow-2xl"
@@ -1663,7 +1809,7 @@ function CardModal({
           if (!e.dataTransfer.files?.length) return;
           e.preventDefault();
           setDragOver(false);
-          void addFiles(e.dataTransfer.files);
+          void addFiles(Array.from(e.dataTransfer.files));
         }}
       >
         {dragOver && (
@@ -1672,8 +1818,17 @@ function CardModal({
           </div>
         )}
         {coverSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={coverSrc} alt="" className="h-36 w-full rounded-t-2xl object-cover" />
+          <button
+            type="button"
+            className="block w-full"
+            onClick={() => {
+              const i = attachments.findIndex((a) => a.isCover);
+              setPreviewIndex(i >= 0 ? i : 0);
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={coverSrc} alt="" className="h-36 w-full rounded-t-2xl object-cover" />
+          </button>
         ) : (
           coverMeta && <div className="h-24 w-full rounded-t-2xl" style={{ background: coverMeta.hex }} />
         )}
@@ -1825,61 +1980,80 @@ function CardModal({
                 multiple
                 className="hidden"
                 onChange={(e) => {
-                  const list = e.target.files;
+                  const list = Array.from(e.target.files || []);
                   e.target.value = "";
                   void addFiles(list);
                 }}
               />
-              <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
                 {attachments.length === 0 && (
-                  <p className="text-xs text-slate-400">{t("tasks.noAttachments")}</p>
+                  <p className="col-span-2 text-xs text-slate-400">{t("tasks.noAttachments")}</p>
                 )}
-                {attachments.map((a) => {
-                  const href = a.url || mediaUrl(a.filePath);
-                  const image = Boolean(
-                    a.filePath && (a.mime?.startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(a.name)),
-                  );
+                {attachments.map((a, idx) => {
+                  const href = attachmentSrc(a);
+                  const image = isImageAttachment(a);
                   return (
-                    <div key={a.id} className="flex items-center gap-3 rounded-lg bg-white p-2">
-                      {image && href ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={href} alt="" className="h-12 w-12 rounded object-cover" />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-400">
-                          {a.url ? <Link2 size={16} /> : <Paperclip size={16} />}
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        {href ? (
-                          <a href={href} target="_blank" rel="noreferrer" className="truncate text-sm text-[var(--axon-blue)]">
-                            {a.name}
-                          </a>
-                        ) : (
-                          <div className="truncate text-sm">{a.name}</div>
-                        )}
-                        {a.isCover && (
-                          <div className="text-[10px] text-slate-400">{t("tasks.coverPhoto")}</div>
-                        )}
-                      </div>
-                      {image && (
-                        <button
-                          type="button"
-                          className="text-[10px] text-slate-500 hover:text-slate-800"
-                          onClick={() => setCoverAttachment(a.id, !a.isCover)}
-                        >
-                          {a.isCover ? t("tasks.removeCover") : t("tasks.setCover")}
-                        </button>
-                      )}
+                    <div key={a.id} className="overflow-hidden rounded-lg bg-white">
                       <button
                         type="button"
-                        className="text-slate-300 hover:text-rose-500"
-                        onClick={() => removeAttachment(a.id)}
+                        className="block w-full text-left"
+                        onClick={() => setPreviewIndex(idx)}
                       >
-                        <X size={14} />
+                        {image && href ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={href} alt="" className="h-28 w-full object-cover" />
+                        ) : (
+                          <div className="flex h-28 w-full items-center justify-center bg-slate-100 text-slate-400">
+                            {isPdfAttachment(a) ? (
+                              <span className="text-xs font-semibold">PDF</span>
+                            ) : a.url ? (
+                              <Link2 size={20} />
+                            ) : (
+                              <Paperclip size={20} />
+                            )}
+                          </div>
+                        )}
+                        <div className="truncate px-2 py-1.5 text-xs font-medium text-slate-700">
+                          {a.name}
+                        </div>
                       </button>
+                      <div className="flex items-center justify-between gap-1 px-2 pb-1.5">
+                        {a.isCover ? (
+                          <span className="text-[10px] text-slate-400">{t("tasks.coverPhoto")}</span>
+                        ) : image ? (
+                          <button
+                            type="button"
+                            className="text-[10px] text-slate-500 hover:text-slate-800"
+                            onClick={() => setCoverAttachment(a.id, true)}
+                          >
+                            {t("tasks.setCover")}
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                        <button
+                          type="button"
+                          className="text-slate-300 hover:text-rose-500"
+                          onClick={() => {
+                            if (previewIndex === idx) setPreviewIndex(null);
+                            void removeAttachment(a.id);
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
+                <button
+                  type="button"
+                  disabled={attachBusy}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex h-full min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white/60 text-xs text-slate-500 hover:border-[var(--axon-blue)] hover:text-[var(--axon-blue)]"
+                >
+                  <Plus size={18} className="mb-1" />
+                  {t("tasks.attachFile")}
+                </button>
               </div>
               {attachError && <p className="mt-2 text-xs text-rose-600">{attachError}</p>}
               {attachBusy && <p className="mt-2 text-xs text-slate-500">{t("tasks.attaching")}</p>}
@@ -2098,5 +2272,14 @@ function CardModal({
         </div>
       </div>
     </div>
+    {previewIndex != null && attachments[previewIndex] && (
+      <AttachmentPreview
+        items={attachments}
+        index={previewIndex}
+        onIndexChange={setPreviewIndex}
+        onClose={() => setPreviewIndex(null)}
+      />
+    )}
+    </>
   );
 }
