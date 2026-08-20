@@ -33,7 +33,11 @@ type YCloudInbound = {
     name?: string;
     address?: string;
   };
-  context?: { forwarded?: boolean; id?: string };
+  contacts?: Array<{
+    name?: { formatted_name?: string; first_name?: string };
+    phones?: Array<{ phone?: string }>;
+  }>;
+  context?: { forwarded?: boolean; frequently_forwarded?: boolean; id?: string };
 };
 
 export function isWhatsAppCaseSeparator(text: string): boolean {
@@ -180,8 +184,8 @@ export async function parseYCloudInboundEvent(
 
   if (!inbound) return { ackOnly: true, message: null };
 
-  const msgType = String(inbound.type || "text");
-  if (["video", "sticker", "reaction", "button", "interactive", "unsupported"].includes(msgType)) {
+  const msgType = String(inbound.type || "text").toLowerCase();
+  if (["sticker", "reaction", "button", "interactive", "unsupported"].includes(msgType)) {
     return { ackOnly: true, message: null };
   }
 
@@ -189,32 +193,48 @@ export async function parseYCloudInboundEvent(
   const from = inbound.from || "";
   const sender = profileName || from || "WhatsApp";
   const externalId = inbound.wamid || inbound.id;
-  const forwarded = Boolean(inbound.context?.forwarded);
+  const forwarded = Boolean(inbound.context?.forwarded || inbound.context?.frequently_forwarded);
   const attachments: InboxAttachment[] = [];
   const bodyParts: string[] = [];
 
   if (forwarded) bodyParts.push("[轉發]");
 
-  if (msgType === "text" && inbound.text?.body) {
+  if (inbound.text?.body) {
     bodyParts.push(inbound.text.body);
-  } else if (msgType === "image" && inbound.image) {
-    if (inbound.image.caption) bodyParts.push(inbound.image.caption);
-    const file = await downloadYCloudMedia(inbound.image, `image-${inbound.image.id || "wa"}.jpg`);
+  }
+
+  const image = inbound.image;
+  if (image) {
+    if (image.caption) bodyParts.push(image.caption);
+    const file = await downloadYCloudMedia(image, `image-${image.id || "wa"}.jpg`);
     if (file) attachments.push(file);
-    if (!inbound.image.caption && !file) bodyParts.push("[圖片]");
-  } else if (msgType === "audio" && inbound.audio) {
-    const file = await downloadYCloudMedia(inbound.audio, `voice-${inbound.audio.id || "wa"}.ogg`);
+    if (!image.caption) bodyParts.push("[圖片]");
+  }
+
+  const audio = inbound.audio;
+  if (audio) {
+    const file = await downloadYCloudMedia(audio, `voice-${audio.id || "wa"}.ogg`);
     if (file) attachments.push(file);
     else bodyParts.push("[語音]");
-  } else if (msgType === "document" && inbound.document) {
-    if (inbound.document.caption) bodyParts.push(inbound.document.caption);
+  }
+
+  const document = inbound.document;
+  if (document) {
+    if (document.caption) bodyParts.push(document.caption);
     const file = await downloadYCloudMedia(
-      inbound.document,
-      inbound.document.filename || `doc-${inbound.document.id || "wa"}.pdf`,
+      document,
+      document.filename || `doc-${document.id || "wa"}.pdf`,
     );
     if (file) attachments.push(file);
-    if (!inbound.document.caption && !file) bodyParts.push("[文件]");
-  } else if (msgType === "location" && inbound.location) {
+    if (!document.caption && !file) bodyParts.push("[文件]");
+  }
+
+  if (inbound.video) {
+    if (inbound.video.caption) bodyParts.push(inbound.video.caption);
+    else bodyParts.push("[影片]");
+  }
+
+  if (inbound.location) {
     const loc = inbound.location;
     bodyParts.push(
       [
@@ -227,8 +247,14 @@ export async function parseYCloudInboundEvent(
         .filter(Boolean)
         .join(" · ") || "[位置]",
     );
-  } else if (inbound.text?.body) {
-    bodyParts.push(inbound.text.body);
+  }
+
+  if (inbound.contacts?.length) {
+    for (const c of inbound.contacts) {
+      const name = c.name?.formatted_name || c.name?.first_name || "聯絡人";
+      const phone = c.phones?.map((p) => p.phone).filter(Boolean).join(", ");
+      bodyParts.push(phone ? `${name} ${phone}` : name);
+    }
   }
 
   const body = bodyParts.filter(Boolean).join("\n").trim();

@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Undo2,
   FileUp,
+  Image as ImageIcon,
+  FileText,
 } from "lucide-react";
 import { SEVERITY_COLORS, cn } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
@@ -28,6 +30,13 @@ import {
 import { MinutesProgressOverlay } from "@/components/MinutesProgressOverlay";
 import { MinutesUploadGroup } from "@/components/MinutesLangSwitch";
 import { useI18n } from "@/components/I18nProvider";
+
+type InboxFile = {
+  name: string;
+  mime: string;
+  kind: "image" | "audio" | "doc" | "file";
+  dataUrl?: string;
+};
 
 type InboxRow = {
   id: string;
@@ -42,6 +51,9 @@ type InboxRow = {
   aiJson: string | null;
   receivedAt: string;
   case?: { id: string; caseNo: string; title: string; status: string } | null;
+  fileCount?: number;
+  hasImage?: boolean;
+  files?: InboxFile[];
 };
 
 type ExtractResult = {
@@ -118,16 +130,47 @@ export default function InboxPage() {
     }>(`/api/inbox${q}`);
     if (!res.ok) {
       setRows([]);
+      setSelected(null);
+      setExtract(null);
       return;
     }
-    setRows(res.data?.messages || []);
+    const list = res.data?.messages || [];
+    setRows(list);
     setCounts(res.data?.counts || { pending: 0, analyzed: 0, processed: 0, dismissed: 0 });
     if (res.data?.inbound) setInbound(res.data.inbound);
+    setSelected((prev) => {
+      const next = (prev && list.find((r) => r.id === prev.id)) || list[0] || null;
+      if (!next) return null;
+      if (prev?.id === next.id && prev.files?.some((f) => f.dataUrl)) {
+        return { ...next, files: prev.files };
+      }
+      return next;
+    });
   }, [filter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!selected) {
+      setExtract(null);
+      return;
+    }
+    applyExtract(selected);
+    if ((selected.fileCount || 0) === 0 || selected.files?.some((f) => f.dataUrl)) return;
+    let cancelled = false;
+    apiFetch<InboxRow>(`/api/inbox/${selected.id}`).then((detail) => {
+      if (cancelled || !detail.ok || !detail.data) return;
+      setSelected((prev) => (prev?.id === detail.data?.id ? { ...prev, ...detail.data } : prev));
+      applyExtract(detail.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Load files once per selected message; list payloads omit image bytes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   function flash(text: string) {
     setMsg(text);
@@ -190,6 +233,9 @@ export default function InboxPage() {
 
   async function selectRow(row: InboxRow) {
     setSelected(row);
+  }
+
+  function applyExtract(row: InboxRow) {
     if (row.aiJson) {
       try {
         setExtract(JSON.parse(row.aiJson));
@@ -199,6 +245,14 @@ export default function InboxPage() {
     } else {
       setExtract(null);
     }
+  }
+
+  function rowTitle(row: InboxRow) {
+    const text = (row.subject || row.body || "").replace(/^\[轉發\]\s*/m, "").trim();
+    if (text) return text.slice(0, 40);
+    if (row.hasImage) return t("inbox.photo");
+    if ((row.fileCount || 0) > 0) return t("inbox.attachment");
+    return t("inbox.noText");
   }
 
   async function analyze() {
@@ -643,8 +697,11 @@ export default function InboxPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium text-[var(--axon-ink)]">
-                            {row.subject || row.body.slice(0, 40)}
+                            {rowTitle(row)}
                           </span>
+                          {row.hasImage && (
+                            <ImageIcon size={12} className="shrink-0 text-slate-400" />
+                          )}
                           <span className="shrink-0 text-[10px] text-slate-400">
                             {inboxStatusLabels[row.status] || row.status}
                           </span>
@@ -679,6 +736,9 @@ export default function InboxPage() {
           ) : (
             <div className="space-y-4">
               <div>
+                <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  {t("inbox.original")}
+                </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span className="rounded-md bg-slate-100 px-2 py-0.5">
                     {channelLabels[selected.channel]}
@@ -697,9 +757,53 @@ export default function InboxPage() {
                     {selected.subject}
                   </h2>
                 )}
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                  {selected.body}
-                </p>
+                {selected.body.trim() ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                    {selected.body}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-400">{t("inbox.noText")}</p>
+                )}
+                {(selected.files || []).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      {selected.files
+                        ?.filter((f) => f.kind === "image" && f.dataUrl)
+                        .map((f) => (
+                          <a
+                            key={f.name + f.dataUrl!.slice(-12)}
+                            href={f.dataUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="overflow-hidden rounded-xl ring-1 ring-[var(--axon-line)]"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={f.dataUrl}
+                              alt={f.name}
+                              className="h-40 w-full object-cover"
+                            />
+                          </a>
+                        ))}
+                    </div>
+                    {selected.files
+                      ?.filter((f) => f.kind === "audio" && f.dataUrl)
+                      .map((f) => (
+                        <audio key={f.name} controls className="w-full" src={f.dataUrl} />
+                      ))}
+                    {selected.files
+                      ?.filter((f) => f.kind !== "image" && f.kind !== "audio")
+                      .map((f) => (
+                        <div
+                          key={f.name}
+                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                        >
+                          <FileText size={14} />
+                          {f.name}
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-2 sm:grid-cols-3">
@@ -751,6 +855,10 @@ export default function InboxPage() {
 
               {extract && (
                 <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    {t("inbox.proposal")}
+                    {extract.mock ? ` · ${t("inbox.mock")}` : ""}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[var(--axon-brand)] px-2.5 py-0.5 text-[11px] text-white">
                       {categoryLabels[extract.category] || extract.category}

@@ -22,6 +22,7 @@ import {
   emailRefersToAttachment,
   excerptFromDocument,
   evidenceTypeFor,
+  isAudioFile,
   isDocumentFile,
   isImageFile,
   MAX_FILES,
@@ -38,11 +39,6 @@ function evidenceSource(channel: string) {
   if (channel === "EMAIL") return "EMAIL_IMPORT";
   if (channel === "WECHAT") return "WHATSAPP_IMPORT";
   return "UPLOAD";
-}
-
-function isAudioFile(file: { mime?: string; name?: string }) {
-  if (file.mime?.startsWith("audio/")) return true;
-  return /\.(ogg|opus|mp3|m4a|wav|webm|aac)$/i.test(file.name || "");
 }
 
 async function resolveSenderByPhone(phoneRaw?: string | null) {

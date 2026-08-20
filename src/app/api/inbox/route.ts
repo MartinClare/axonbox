@@ -11,6 +11,7 @@ import {
   listConnectorStatus,
   persistNormalizedMessages,
 } from "@/lib/inbox";
+import { serializeInboxMessage } from "@/lib/inbox-serialize";
 import type { InboxChannel, NormalizedInboxMessage } from "@/lib/connectors";
 import {
   getInboundAddress,
@@ -18,28 +19,7 @@ import {
   inboundImapConfigured,
   inboundResendConfigured,
   inboundWebhookConfigured,
-  mailboxAlias,
 } from "@/lib/email-inbound";
-
-function mailboxFromRaw(rawPayload?: string | null) {
-  if (!rawPayload) return "";
-  try {
-    const raw = JSON.parse(rawPayload) as { mailbox?: string; to?: string; receivedFor?: string };
-    return raw.mailbox || mailboxAlias(raw.to || raw.receivedFor);
-  } catch {
-    return "";
-  }
-}
-
-function fromFromRaw(rawPayload?: string | null) {
-  if (!rawPayload) return "";
-  try {
-    const raw = JSON.parse(rawPayload) as { from?: string };
-    return raw.from || "";
-  } catch {
-    return "";
-  }
-}
 
 export async function GET(req: NextRequest) {
   const { session, error } = await requireSession();
@@ -79,12 +59,7 @@ export async function GET(req: NextRequest) {
     address;
 
   return NextResponse.json({
-    messages: messages.map((m) => ({
-      ...m,
-      mailbox: mailboxFromRaw(m.rawPayload) || m.forwardedBy?.inboundKey || "",
-      forwardedByName: m.forwardedBy?.name || null,
-      fromEmail: fromFromRaw(m.rawPayload),
-    })),
+    messages: messages.map((m) => serializeInboxMessage(m)),
     counts: {
       pending: countMap.PENDING || 0,
       analyzed: countMap.ANALYZED || 0,

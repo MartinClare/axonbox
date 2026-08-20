@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { analyzeInboxMessage } from "@/lib/inbox";
+import { serializeInboxMessage } from "@/lib/inbox-serialize";
+
+const inboxInclude = {
+  case: { select: { id: true, caseNo: true, title: true, status: true } },
+  forwardedBy: { select: { id: true, name: true, inboundKey: true } },
+} as const;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -12,13 +18,10 @@ export async function GET(_req: Request, { params }: Params) {
 
   const message = await prisma.inboxMessage.findUnique({
     where: { id },
-    include: {
-      case: { include: { tasks: true } },
-      evidence: true,
-    },
+    include: inboxInclude,
   });
   if (!message) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return NextResponse.json(message);
+  return NextResponse.json(serializeInboxMessage(message, { includeFileData: true }));
 }
 
 export async function PATCH(req: Request, { params }: Params) {
@@ -33,7 +36,16 @@ export async function PATCH(req: Request, { params }: Params) {
         imageBase64: body.imageBase64,
         imageMime: body.imageMime,
       });
-      return NextResponse.json(result);
+      const message = result.message
+        ? await prisma.inboxMessage.findUnique({
+            where: { id },
+            include: inboxInclude,
+          })
+        : null;
+      return NextResponse.json({
+        extract: result.extract,
+        message: message ? serializeInboxMessage(message, { includeFileData: true }) : result.message,
+      });
     } catch {
       return NextResponse.json({ error: "analyze failed" }, { status: 400 });
     }
@@ -43,8 +55,9 @@ export async function PATCH(req: Request, { params }: Params) {
     const message = await prisma.inboxMessage.update({
       where: { id },
       data: { status: "DISMISSED", processedAt: new Date() },
+      include: inboxInclude,
     });
-    return NextResponse.json(message);
+    return NextResponse.json(serializeInboxMessage(message, { includeFileData: true }));
   }
 
   if (body.action === "restore") {
@@ -59,8 +72,9 @@ export async function PATCH(req: Request, { params }: Params) {
         status: current.aiJson ? "ANALYZED" : "PENDING",
         processedAt: null,
       },
+      include: inboxInclude,
     });
-    return NextResponse.json(message);
+    return NextResponse.json(serializeInboxMessage(message, { includeFileData: true }));
   }
 
   if (body.action === "delete") {
@@ -78,6 +92,10 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.subject !== undefined) data.subject = body.subject;
   if (body.body !== undefined) data.body = body.body;
 
-  const message = await prisma.inboxMessage.update({ where: { id }, data });
-  return NextResponse.json(message);
+  const message = await prisma.inboxMessage.update({
+    where: { id },
+    data,
+    include: inboxInclude,
+  });
+  return NextResponse.json(serializeInboxMessage(message, { includeFileData: true }));
 }

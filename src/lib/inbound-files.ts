@@ -48,6 +48,11 @@ export function isImageFile(file: { mime?: string; name?: string }) {
   return /^(jpe?g|png|gif|webp|bmp|heic|heif)$/.test(extOf(file.name || ""));
 }
 
+export function isAudioFile(file: { mime?: string; name?: string }) {
+  if (file.mime?.startsWith("audio/")) return true;
+  return /\.(ogg|opus|mp3|m4a|wav|webm|aac)$/i.test(file.name || "");
+}
+
 export function isDocumentFile(file: { mime?: string; name?: string }) {
   const mime = (file.mime || "").toLowerCase();
   const ext = extOf(file.name || "");
