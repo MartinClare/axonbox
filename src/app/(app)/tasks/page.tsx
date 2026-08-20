@@ -23,16 +23,21 @@ import {
   Calendar,
   CheckSquare,
   FileUp,
+  Link2,
   Maximize2,
+  MessageSquare,
   Minimize2,
   MoreHorizontal,
+  Paperclip,
   Plus,
+  Copy,
   Search,
   Trash2,
   UserPlus,
   UserRound,
   X,
 } from "lucide-react";
+import { mediaUrl } from "@/lib/media";
 import { STATUS_COLORS, cn, daysRemaining, formatDay } from "@/lib/labels";
 import { useI18n } from "@/components/I18nProvider";
 import { apiFetch, asArray } from "@/lib/api-client";
@@ -51,6 +56,23 @@ import {
   type TaskColumnId,
 } from "@/lib/task-board";
 
+type TaskAttachment = {
+  id: string;
+  name: string;
+  filePath?: string | null;
+  url?: string | null;
+  mime?: string | null;
+  size?: number;
+  isCover?: boolean;
+};
+
+type TaskComment = {
+  id: string;
+  body: string;
+  createdAt: string;
+  actor?: { id: string; name: string } | null;
+};
+
 type Task = {
   id: string;
   title: string;
@@ -67,6 +89,8 @@ type Task = {
   case?: { id: string; caseNo: string; title: string } | null;
   meeting?: { id: string; title: string; meetingAt?: string | null } | null;
   assignee?: { id?: string; name: string } | null;
+  attachments?: TaskAttachment[];
+  comments?: TaskComment[];
 };
 
 type Meeting = {
@@ -173,17 +197,27 @@ function dueTone(task: Task) {
   return "bg-sky-100 text-sky-800";
 }
 
+function coverImage(task: Task) {
+  const att = task.attachments?.find(
+    (a) => a.isCover && a.filePath && (a.mime?.startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(a.name)),
+  );
+  return att ? mediaUrl(att.filePath) : null;
+}
+
 function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
   const { t } = useI18n();
   const labels = parseLabels(task.labelsJson);
   const checks = parseChecklist(task.checklistJson);
   const done = checks.filter((c) => c.checked).length;
   const cover = labelMeta(task.coverColor || "");
+  const coverSrc = coverImage(task);
   const remain = daysRemaining(task.dueAt);
   const overdue = remain !== null && remain < 0 && task.status !== "DONE";
   const badge = task.meetingId
     ? t("tasks.meeting")
     : task.case?.caseNo || t("common.none");
+  const fileCount = task.attachments?.length || 0;
+  const commentCount = task.comments?.length || 0;
 
   return (
     <div
@@ -193,7 +227,12 @@ function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
         overdue && "ring-rose-300",
       )}
     >
-      {cover && <div className="h-8 w-full" style={{ background: cover.hex }} />}
+      {coverSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={coverSrc} alt="" className="h-24 w-full object-cover" />
+      ) : (
+        cover && <div className="h-8 w-full" style={{ background: cover.hex }} />
+      )}
       <div className="space-y-2 p-3">
         {labels.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -218,6 +257,18 @@ function TaskCardFace({ task, muted }: { task: Task; muted?: boolean }) {
             <span className="inline-flex items-center gap-0.5">
               <CheckSquare size={12} />
               {done}/{checks.length}
+            </span>
+          )}
+          {fileCount > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              <Paperclip size={12} />
+              {fileCount}
+            </span>
+          )}
+          {commentCount > 0 && (
+            <span className="inline-flex items-center gap-0.5">
+              <MessageSquare size={12} />
+              {commentCount}
             </span>
           )}
           {task.dueAt && (
@@ -346,6 +397,10 @@ export default function TasksPage() {
     } else {
       setTasks(asArray<Task>(taskRes.data));
       setError("");
+      setOpen((prev) => {
+        if (!prev) return prev;
+        return asArray<Task>(taskRes.data).find((t) => t.id === prev.id) || prev;
+      });
     }
     setArchived(archRes.ok ? asArray<Task>(archRes.data) : []);
     setMeetings(meetingRes.ok ? asArray<Meeting>(meetingRes.data) : []);
@@ -524,6 +579,20 @@ export default function TasksPage() {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...res.data } : t)));
       setOpen((prev) => (prev?.id === id ? { ...prev, ...res.data } : prev));
     }
+  }
+
+  async function copyTask(id: string) {
+    const res = await apiFetch<Task>("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ copyFrom: id }),
+    });
+    if (!res.ok) {
+      setError(res.error || t("tasks.copyFail"));
+      return;
+    }
+    await load();
+    setOpen(res.data);
   }
 
   async function addCard(status: TaskColumnId) {
@@ -976,7 +1045,14 @@ export default function TasksPage() {
       )}
 
       {open && (
-        <CardModal task={open} users={users} onClose={() => setOpen(null)} onSave={saveTask} />
+        <CardModal
+          task={open}
+          users={users}
+          onClose={() => setOpen(null)}
+          onSave={saveTask}
+          onCopy={copyTask}
+          onReload={load}
+        />
       )}
 
       {uploadProgress && <MinutesProgressOverlay progress={uploadProgress} />}
@@ -1414,14 +1490,19 @@ function CardModal({
   users,
   onClose,
   onSave,
+  onCopy,
+  onReload,
 }: {
   task: Task;
   users: UserOpt[];
   onClose: () => void;
   onSave: (id: string, patch: Record<string, unknown>) => Promise<void>;
+  onCopy: (id: string) => Promise<void>;
+  onReload: () => Promise<void>;
 }) {
   const { t, taskStatusLabels } = useI18n();
   const isMeeting = Boolean(task.meetingId);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(task.title);
   const [instructions, setInstructions] = useState(task.instructions || "");
   const [labels, setLabels] = useState(parseLabels(task.labelsJson));
@@ -1431,7 +1512,16 @@ function CardModal({
   const [status, setStatus] = useState(task.status);
   const [checks, setChecks] = useState(parseChecklist(task.checklistJson));
   const [newCheck, setNewCheck] = useState("");
+  const [attachments, setAttachments] = useState<TaskAttachment[]>(task.attachments || []);
+  const [comments, setComments] = useState<TaskComment[]>(task.comments || []);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [showLink, setShowLink] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [attachError, setAttachError] = useState("");
   const coverMeta = labelMeta(cover);
+  const coverSrc = coverImage({ ...task, attachments });
 
   useEffect(() => {
     setTitle(task.title);
@@ -1442,7 +1532,108 @@ function CardModal({
     setAssigneeId(task.assignee?.id || "");
     setStatus(task.status);
     setChecks(parseChecklist(task.checklistJson));
+    setAttachments(task.attachments || []);
+    setComments(task.comments || []);
   }, [task]);
+
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const files = e.clipboardData?.files;
+      if (!files?.length) return;
+      e.preventDefault();
+      void addFiles(files);
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id]);
+
+  async function addFiles(files: FileList | File[] | null) {
+    if (!files || files.length === 0) return;
+    setAttachBusy(true);
+    setAttachError("");
+    for (const file of Array.from(files)) {
+      if (file.size > 12_000_000) {
+        setAttachError(t("tasks.tooLarge"));
+        continue;
+      }
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiFetch<TaskAttachment>(`/api/tasks/${task.id}/attachments`, {
+        method: "POST",
+        body: form,
+      });
+      if (res.ok && res.data) {
+        setAttachments((prev) => [...prev, res.data]);
+      } else if (!res.ok) {
+        setAttachError(res.error);
+      }
+    }
+    setAttachBusy(false);
+    await onReload();
+  }
+
+  async function addLink() {
+    const url = linkUrl.trim();
+    if (!url) return;
+    setAttachBusy(true);
+    setAttachError("");
+    const res = await apiFetch<TaskAttachment>(`/api/tasks/${task.id}/attachments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, name: url }),
+    });
+    setAttachBusy(false);
+    if (res.ok && res.data) {
+      setAttachments((prev) => [...prev, res.data]);
+      setLinkUrl("");
+      setShowLink(false);
+      await onReload();
+    } else if (!res.ok) {
+      setAttachError(res.error);
+    }
+  }
+
+  async function removeAttachment(id: string) {
+    await apiFetch(`/api/tasks/${task.id}/attachments?id=${id}`, { method: "DELETE" });
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    await onReload();
+  }
+
+  async function removeComment(id: string) {
+    await apiFetch(`/api/tasks/${task.id}/comments?id=${id}`, { method: "DELETE" });
+    setComments((prev) => prev.filter((c) => c.id !== id));
+    await onReload();
+  }
+
+  async function setCoverAttachment(id: string, on: boolean) {
+    const res = await apiFetch<TaskAttachment>(`/api/tasks/${task.id}/attachments`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, isCover: on }),
+    });
+    if (res.ok) {
+      setAttachments((prev) =>
+        prev.map((a) => ({ ...a, isCover: on ? a.id === id : false })),
+      );
+      await onReload();
+    }
+  }
+
+  async function addComment() {
+    const body = commentDraft.trim();
+    if (!body) return;
+    const res = await apiFetch<TaskComment>(`/api/tasks/${task.id}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (res.ok && res.data) {
+      setComments((prev) => [...prev, res.data!]);
+      setCommentDraft("");
+      await onReload();
+    }
+  }
 
   function toggleLabel(id: string) {
     const next = labels.includes(id) ? labels.filter((x) => x !== id) : [...labels, id];
@@ -1457,8 +1648,35 @@ function CardModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-start sm:pt-12">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-[#f4f5f7] shadow-2xl">
-        {coverMeta && <div className="h-24 w-full rounded-t-2xl" style={{ background: coverMeta.hex }} />}
+      <div
+        className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-[#f4f5f7] shadow-2xl"
+        onDragOver={(e) => {
+          if (![...e.dataTransfer.types].includes("Files")) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setDragOver(false);
+        }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.files?.length) return;
+          e.preventDefault();
+          setDragOver(false);
+          void addFiles(e.dataTransfer.files);
+        }}
+      >
+        {dragOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--axon-blue)] bg-sky-50/80 text-sm font-medium text-[var(--axon-blue)]">
+            {t("tasks.dropFiles")}
+          </div>
+        )}
+        {coverSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={coverSrc} alt="" className="h-36 w-full rounded-t-2xl object-cover" />
+        ) : (
+          coverMeta && <div className="h-24 w-full rounded-t-2xl" style={{ background: coverMeta.hex }} />
+        )}
         <div className="grid gap-5 p-5 md:grid-cols-[1fr_220px]">
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -1596,6 +1814,130 @@ function CardModal({
                 </div>
               </div>
             </section>
+
+            <section>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <Paperclip size={14} /> {t("tasks.attachments")}
+              </h3>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const list = e.target.files;
+                  e.target.value = "";
+                  void addFiles(list);
+                }}
+              />
+              <div className="space-y-2">
+                {attachments.length === 0 && (
+                  <p className="text-xs text-slate-400">{t("tasks.noAttachments")}</p>
+                )}
+                {attachments.map((a) => {
+                  const href = a.url || mediaUrl(a.filePath);
+                  const image = Boolean(
+                    a.filePath && (a.mime?.startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test(a.name)),
+                  );
+                  return (
+                    <div key={a.id} className="flex items-center gap-3 rounded-lg bg-white p-2">
+                      {image && href ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={href} alt="" className="h-12 w-12 rounded object-cover" />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-400">
+                          {a.url ? <Link2 size={16} /> : <Paperclip size={16} />}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        {href ? (
+                          <a href={href} target="_blank" rel="noreferrer" className="truncate text-sm text-[var(--axon-blue)]">
+                            {a.name}
+                          </a>
+                        ) : (
+                          <div className="truncate text-sm">{a.name}</div>
+                        )}
+                        {a.isCover && (
+                          <div className="text-[10px] text-slate-400">{t("tasks.coverPhoto")}</div>
+                        )}
+                      </div>
+                      {image && (
+                        <button
+                          type="button"
+                          className="text-[10px] text-slate-500 hover:text-slate-800"
+                          onClick={() => setCoverAttachment(a.id, !a.isCover)}
+                        >
+                          {a.isCover ? t("tasks.removeCover") : t("tasks.setCover")}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="text-slate-300 hover:text-rose-500"
+                        onClick={() => removeAttachment(a.id)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              {attachError && <p className="mt-2 text-xs text-rose-600">{attachError}</p>}
+              {attachBusy && <p className="mt-2 text-xs text-slate-500">{t("tasks.attaching")}</p>}
+              {showLink && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    className="axon-input min-h-0 py-2 text-sm"
+                    placeholder="https://"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void addLink();
+                    }}
+                  />
+                  <button type="button" className="axon-btn axon-btn-primary min-h-9 px-3 text-xs" onClick={() => void addLink()}>
+                    {t("common.add")}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            <section>
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <MessageSquare size={14} /> {t("tasks.comments")}
+              </h3>
+              <div className="space-y-2">
+                {comments.map((c) => (
+                  <div key={c.id} className="rounded-lg bg-white px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-[11px] text-slate-400">
+                        {c.actor?.name || t("common.unassigned")} · {new Date(c.createdAt).toLocaleString("zh-HK")}
+                      </div>
+                      <button
+                        type="button"
+                        className="text-slate-300 hover:text-rose-500"
+                        onClick={() => void removeComment(c.id)}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{c.body}</p>
+                  </div>
+                ))}
+                <textarea
+                  className="axon-input min-h-[72px] resize-y text-sm"
+                  placeholder={t("tasks.commentPh")}
+                  value={commentDraft}
+                  onChange={(e) => setCommentDraft(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="axon-btn axon-btn-primary min-h-9 px-3 text-xs"
+                  onClick={() => void addComment()}
+                >
+                  {t("tasks.addComment")}
+                </button>
+              </div>
+            </section>
           </div>
 
           <aside className="space-y-3">
@@ -1709,6 +2051,31 @@ function CardModal({
                 </select>
               </label>
             )}
+            <button
+              type="button"
+              disabled={attachBusy}
+              className="axon-btn axon-btn-ghost w-full min-h-9 text-sm"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Paperclip size={14} />
+              {t("tasks.attachFile")}
+            </button>
+            <button
+              type="button"
+              className="axon-btn axon-btn-ghost w-full min-h-9 text-sm"
+              onClick={() => setShowLink(true)}
+            >
+              <Link2 size={14} />
+              {t("tasks.attachLink")}
+            </button>
+            <button
+              type="button"
+              className="axon-btn axon-btn-ghost w-full min-h-9 text-sm"
+              onClick={() => void onCopy(task.id)}
+            >
+              <Copy size={14} />
+              {t("tasks.copyCard")}
+            </button>
             <button
               type="button"
               className="axon-btn axon-btn-ghost w-full min-h-9 text-sm"

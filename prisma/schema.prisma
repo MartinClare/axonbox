@@ -25,6 +25,7 @@ model User {
   assignedCases   Case[]          @relation("CaseAssignee")
   assignedTasks   Task[]          @relation("TaskAssignee")
   caseEvents      CaseEvent[]
+  taskComments    TaskComment[]   @relation("TaskComments")
   subcontractors  Subcontractor[] @relation("SubUser")
   forwardedInbox  InboxMessage[]  @relation("InboxForwardedBy")
 }
@@ -128,12 +129,43 @@ model Task {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  case     Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  meeting  Meeting? @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  assignee User?    @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  case        Case?             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  meeting     Meeting?          @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  assignee    User?             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  attachments TaskAttachment[]
+  comments    TaskComment[]
 
   @@index([status, sortOrder])
   @@index([meetingId, sortOrder])
+}
+
+model TaskAttachment {
+  id        String   @id @default(cuid())
+  taskId    String
+  name      String
+  filePath  String?
+  url       String?
+  mime      String?
+  size      Int      @default(0)
+  isCover   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  actorId   String?
+  body      String
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User? @relation("TaskComments", fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
 }
 
 model CaseEvent {

@@ -543,16 +543,20 @@ export async function processInboxToEventTask(opts: {
   });
 
   const files = parseInboxAttachments(message.attachments);
+  const savedFiles: Array<{ name: string; filePath: string; mime: string; size: number; image: boolean }> = [];
   for (const file of files) {
     try {
+      const buf = Buffer.from(file.base64, "base64");
       const ext = path.extname(file.name) || "";
       const filename = `${Date.now()}-${randomUUID().slice(0, 8)}${ext || ""}`;
-      const saved = await saveBuffer(
-        Buffer.from(file.base64, "base64"),
-        filename,
-        "evidence",
-        file.mime,
-      );
+      const saved = await saveBuffer(buf, filename, "evidence", file.mime);
+      savedFiles.push({
+        name: file.name,
+        filePath: saved.filePath,
+        mime: file.mime,
+        size: buf.length,
+        image: isImageFile(file),
+      });
       await prisma.evidence.create({
         data: {
           type: evidenceTypeFor(file),
@@ -574,6 +578,7 @@ export async function processInboxToEventTask(opts: {
 
   let task = null;
   if (opts.createTask !== false) {
+    const firstImage = savedFiles.find((f) => f.image);
     task = await prisma.task.create({
       data: {
         title: `跟進：${created.title}`,
@@ -582,6 +587,17 @@ export async function processInboxToEventTask(opts: {
         assigneeId:
           (await resolveActorId(opts.assigneeId || opts.userId)) || undefined,
         dueAt,
+        attachments: savedFiles.length
+          ? {
+              create: savedFiles.map((f) => ({
+                name: f.name,
+                filePath: f.filePath,
+                mime: f.mime,
+                size: f.size,
+                isCover: Boolean(firstImage && f.filePath === firstImage.filePath),
+              })),
+            }
+          : undefined,
       },
     });
   }

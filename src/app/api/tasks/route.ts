@@ -7,6 +7,11 @@ const taskInclude = {
   case: { select: { id: true, caseNo: true, title: true, status: true } },
   meeting: { select: { id: true, title: true, meetingAt: true } },
   assignee: { select: { id: true, name: true, email: true } },
+  attachments: { orderBy: { createdAt: "asc" as const } },
+  comments: {
+    orderBy: { createdAt: "asc" as const },
+    include: { actor: { select: { id: true, name: true } } },
+  },
 } as const;
 
 async function syncCaseFromStatus(
@@ -86,6 +91,49 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const copyFrom = body.copyFrom ? String(body.copyFrom).trim() : "";
+    if (copyFrom) {
+      const source = await prisma.task.findUnique({
+        where: { id: copyFrom },
+        include: { attachments: true },
+      });
+      if (!source) return NextResponse.json({ error: "task not found" }, { status: 404 });
+      const orderWhere = source.meetingId
+        ? { meetingId: source.meetingId, archived: false }
+        : { status: source.status, caseId: { not: null }, archived: false };
+      const maxOrder = await prisma.task.aggregate({
+        where: orderWhere,
+        _max: { sortOrder: true },
+      });
+      const created = await prisma.task.create({
+        data: {
+          title: source.title.endsWith("（副本）") ? source.title : `${source.title}（副本）`,
+          instructions: source.instructions,
+          status: source.status,
+          caseId: source.caseId,
+          meetingId: source.meetingId,
+          assigneeId: source.assigneeId,
+          dueAt: source.dueAt,
+          sortOrder: (maxOrder._max.sortOrder ?? -1) + 1,
+          labelsJson: source.labelsJson,
+          coverColor: source.coverColor,
+          checklistJson: source.checklistJson,
+          attachments: {
+            create: source.attachments.map((a) => ({
+              name: a.name,
+              filePath: a.filePath,
+              url: a.url,
+              mime: a.mime,
+              size: a.size,
+              isCover: a.isCover,
+            })),
+          },
+        },
+        include: taskInclude,
+      });
+      return NextResponse.json(created, { status: 201 });
+    }
+
     const title = String(body.title || "").trim();
     const caseId = body.caseId ? String(body.caseId).trim() : "";
     const meetingId = body.meetingId ? String(body.meetingId).trim() : "";
