@@ -109,7 +109,19 @@ export function FilePreview({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={src} alt={item.name} className="max-h-[80vh] max-w-full rounded object-contain" />
           ) : isPdf(item) ? (
-            <iframe title={item.name} src={src} className="h-[80vh] w-[min(100vw-4rem,900px)] rounded bg-white" />
+            <div className="flex h-[80vh] w-[min(100vw-4rem,900px)] flex-col overflow-hidden rounded bg-white">
+              <object data={src} type="application/pdf" className="min-h-0 flex-1">
+                <iframe title={item.name} src={src} className="h-full w-full" />
+              </object>
+              <a
+                href={src}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 border-t border-slate-200 px-3 py-2 text-center text-sm text-[var(--axon-blue)]"
+              >
+                {t("tasks.openFile")}
+              </a>
+            </div>
           ) : isVideo(item) ? (
             <video src={src} controls className="max-h-[80vh] max-w-full rounded" />
           ) : isAudio(item) ? (

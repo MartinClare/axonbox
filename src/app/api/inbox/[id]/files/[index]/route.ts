@@ -25,18 +25,34 @@ export async function GET(_req: Request, { params }: Params) {
   if (!file) return NextResponse.json({ error: "file not found" }, { status: 404 });
 
   const buf = Buffer.from(file.base64, "base64");
-  const type = file.mime || "application/octet-stream";
+  const type = sniffMime(file, buf);
   const inline =
     type.startsWith("image/") ||
     type.startsWith("audio/") ||
     type.startsWith("video/") ||
     type.includes("pdf");
+  const filename = file.name.replace(/[\\"\r\n]/g, "_");
 
   return new NextResponse(new Uint8Array(buf), {
     headers: {
       "Content-Type": type,
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(file.name)}"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, max-age=120",
     },
   });
+}
+
+function sniffMime(file: { name: string; mime: string }, buf: Buffer) {
+  const name = (file.name || "").toLowerCase();
+  const mime = (file.mime || "").toLowerCase();
+  const head = buf.subarray(0, 5).toString("latin1");
+  if (head.startsWith("%PDF") || name.endsWith(".pdf") || mime.includes("pdf")) {
+    return "application/pdf";
+  }
+  if (mime && mime !== "application/octet-stream") return file.mime;
+  if (/\.(jpe?g)$/.test(name)) return "image/jpeg";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  if (name.endsWith(".gif")) return "image/gif";
+  return file.mime || "application/octet-stream";
 }

@@ -80,8 +80,8 @@ const channelIcon = {
 
 const POLL_MS = 3000;
 
-function fileSrc(f: InboxFile) {
-  return f.url || f.dataUrl || null;
+function fileSrc(f: InboxFile, messageId?: string, index?: number) {
+  return f.url || f.dataUrl || (messageId != null && index != null ? `/api/inbox/${messageId}/files/${index}` : null);
 }
 
 function keepLoadedFiles(prev: InboxRow | null, next: InboxRow): InboxRow {
@@ -876,37 +876,53 @@ export default function InboxPage() {
                   <div className="mt-3 space-y-2">
                     <div className="grid grid-cols-2 gap-2">
                       {selected.files?.map((f, idx) => {
-                        const src = fileSrc(f);
-                        const image = f.kind === "image" && src;
+                        if (f.kind !== "image") return null;
+                        const src = fileSrc(f, selected.id, idx);
+                        if (!src) return null;
                         return (
-                          <button
+                          <a
                             key={`${f.name}-${idx}`}
-                            type="button"
-                            onClick={() => setPreviewIndex(idx)}
-                            className="overflow-hidden rounded-xl bg-slate-50 text-left ring-1 ring-[var(--axon-line)] hover:ring-[var(--axon-blue)]"
+                            href={src}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => {
+                              if (e.metaKey || e.ctrlKey) return;
+                              e.preventDefault();
+                              setPreviewIndex(idx);
+                            }}
+                            className="overflow-hidden rounded-xl ring-1 ring-[var(--axon-line)] hover:ring-[var(--axon-blue)]"
                           >
-                            {image ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={src} alt={f.name} className="h-40 w-full object-cover" />
-                            ) : (
-                              <div className="flex h-28 flex-col items-center justify-center gap-1 px-2 text-slate-500">
-                                {f.kind === "audio" ? (
-                                  <span className="text-xs font-medium">{t("capture.voice")}</span>
-                                ) : (
-                                  <FileText size={22} />
-                                )}
-                                <span className="line-clamp-2 w-full text-center text-[11px] text-slate-600">
-                                  {f.name}
-                                </span>
-                              </div>
-                            )}
-                            {image && (
-                              <div className="truncate px-2 py-1 text-[11px] text-slate-500">{f.name}</div>
-                            )}
-                          </button>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={src} alt={f.name} className="h-40 w-full object-cover" />
+                            <div className="truncate px-2 py-1 text-[11px] text-slate-500">{f.name}</div>
+                          </a>
                         );
                       })}
                     </div>
+                    {selected.files?.map((f, idx) => {
+                      if (f.kind === "image") return null;
+                      const src = fileSrc(f, selected.id, idx);
+                      if (!src) return null;
+                      return (
+                        <a
+                          key={`${f.name}-${idx}`}
+                          href={src}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => {
+                            if (e.metaKey || e.ctrlKey) return;
+                            e.preventDefault();
+                            setPreviewIndex(idx);
+                          }}
+                          className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-[var(--axon-blue)] ring-1 ring-transparent hover:bg-sky-50 hover:ring-sky-200"
+                        >
+                          <FileText size={16} className="shrink-0 text-slate-500" />
+                          <span className="min-w-0 flex-1 truncate underline decoration-slate-300 underline-offset-2">
+                            {f.name}
+                          </span>
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -992,9 +1008,9 @@ export default function InboxPage() {
 
       {previewIndex != null && selected?.files?.[previewIndex] && (
         <FilePreview
-          items={(selected.files || []).map((f) => ({
+          items={(selected.files || []).map((f, idx) => ({
             name: f.name,
-            src: fileSrc(f),
+            src: fileSrc(f, selected.id, idx),
             mime: f.mime,
           }))}
           index={previewIndex}
