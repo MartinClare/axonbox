@@ -3,7 +3,6 @@ import { KpiCard } from "@/components/KpiCard";
 import { CaseCard } from "@/components/CaseCard";
 import { CategoryDonut, TrendLine } from "@/components/Charts";
 import { DigestCopyButton } from "@/components/DigestCopyButton";
-import { FieldHomeRedirect } from "@/components/field/FieldHomeRedirect";
 import Link from "next/link";
 import {
   Camera,
@@ -206,7 +205,6 @@ export default async function OverviewPage() {
 
     return (
       <div className="axon-page">
-        <FieldHomeRedirect />
         <div className="axon-page-header">
           <div>
             <p className="axon-kicker">{t("home.kicker")}</p>

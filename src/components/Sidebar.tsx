@@ -22,7 +22,6 @@ import {
   CheckSquare,
   BookOpen,
   CircleHelp,
-  Smartphone,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/labels";
@@ -77,7 +76,6 @@ export function Sidebar() {
         titleKey: "nav.group.ops",
         items: [
           { href: "/", labelKey: "nav.overview", icon: LayoutDashboard },
-          { href: "/m", labelKey: "nav.fieldApp", icon: Smartphone },
           { href: "/inbox", labelKey: "nav.inbox", icon: Inbox },
           { href: "/capture", labelKey: "nav.capture", icon: Camera },
           { href: "/cases", labelKey: "nav.cases", icon: FolderKanban },
@@ -112,11 +110,11 @@ export function Sidebar() {
 
   const mobileTabs: NavItem[] = useMemo(
     () => [
-      { href: "/m", labelKey: "field.tab.home", icon: LayoutDashboard },
-      { href: "/m/inbox", labelKey: "field.tab.whatsapp", icon: Inbox },
-      { href: "/m/capture", labelKey: "field.tab.photo", icon: Camera },
-      { href: "/m/evidence", labelKey: "nav.evidence", icon: Images },
-      { href: "/m/cases", labelKey: "nav.cases", icon: FolderKanban },
+      { href: "/", labelKey: "nav.overview", icon: LayoutDashboard },
+      { href: "/inbox", labelKey: "nav.inboxShort", icon: Inbox },
+      { href: "/capture", labelKey: "nav.captureShort", icon: Camera },
+      { href: "/cases", labelKey: "nav.cases", icon: FolderKanban },
+      { href: "/tasks", labelKey: "nav.tasks", icon: ListChecks },
     ],
     [],
   );
@@ -261,7 +259,7 @@ export function Sidebar() {
           {mobileTabs.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
-            const primary = item.href === "/m/capture";
+            const primary = item.href === "/capture";
             return (
               <Link
                 key={item.href}

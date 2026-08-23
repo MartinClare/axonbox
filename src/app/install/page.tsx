@@ -158,7 +158,7 @@ export default function InstallPage() {
           <Link href="/login" className="axon-btn axon-btn-primary">
             {t("install.login")}
           </Link>
-          <Link href="/m/capture" className="axon-btn axon-btn-ghost">
+          <Link href="/capture" className="axon-btn axon-btn-ghost">
             {t("install.goCapture")}
           </Link>
         </div>

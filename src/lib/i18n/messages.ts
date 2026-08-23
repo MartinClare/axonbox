@@ -31,7 +31,6 @@ const zh: Dict = {
   "nav.openMenu": "開啟選單",
   "nav.closeMenu": "關閉選單",
   "nav.siteOps": "Site Ops",
-  "nav.fieldApp": "現場 App",
 
   "common.loading": "載入中…",
   "common.save": "儲存",
@@ -188,7 +187,6 @@ const en: Dict = {
   "nav.openMenu": "Open menu",
   "nav.closeMenu": "Close menu",
   "nav.siteOps": "Site Ops",
-  "nav.fieldApp": "Field app",
 
   "common.loading": "Loading…",
   "common.save": "Save",
