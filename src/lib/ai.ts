@@ -2,6 +2,13 @@ import type OpenAI from "openai";
 import { getAIClient, getAIModel, hasAIKey, hasOpenAIKey } from "./ai-client";
 
 import { parseInboxActionItems, normalizeActionItems, type InboxActionItem } from "./inbox-actions";
+import {
+  analysisModeForFieldIntent,
+  type FieldIntent,
+} from "./field-intent";
+
+export type { FieldIntent } from "./field-intent";
+export { analysisModeForFieldIntent, tagsForFieldIntent } from "./field-intent";
 
 export type CaseCategory = "SAFETY" | "QUALITY" | "PROGRESS" | "ENVIRONMENT" | "OTHER";
 export type Severity = "HIGH" | "MEDIUM" | "LOW";
@@ -358,13 +365,16 @@ export async function extractFromInput(input: {
   filename?: string;
   mode?: "site" | "email" | "whatsapp";
   analysisMode?: "record" | "discover";
+  /** Field camera purpose — sharpens record vs discover for site photos. */
+  fieldIntent?: FieldIntent;
   documentNote?: string;
   /** Older replies in a mail thread — background only. */
   threadHistory?: string;
   /** Email default is original language. `zh` only when the user asks to translate. */
   outputLang?: "original" | "zh";
 }): Promise<ExtractResult> {
-  const analysisMode = input.analysisMode === "record" ? "record" : "discover";
+  const analysisMode = analysisModeForFieldIntent(input.fieldIntent, input.analysisMode);
+  const fieldIntent = input.fieldIntent;
   const hasImage = Boolean(input.imageBase64);
   const source = `${input.text || ""} ${input.filename || ""} ${input.documentNote || ""}`;
 
@@ -456,6 +466,38 @@ Do not invent inspection checklists.
 沒有明確缺陷時：category=OTHER，severity=LOW，findings=[]，title／description 必須貼近原文。
 禁止主動套用巡檢清單（圍欄、洞口、鋼筋、HyD、XPMS、公共道路挖掘）。除非原文或照片清楚出現，否則不要寫這些。
 `;
+  const fieldIntentRules =
+    fieldIntent === "issue"
+      ? keepSourceLang
+        ? `
+Field intent: SOMETHING WRONG NOW. The worker needs immediate follow-up.
+- title and actionItems must be the next site action (who should do what).
+- findings only for defects clearly visible in the photo(s) or stated in the note.
+- Do not invent HyD, XPMS, barriers, excavation, or checklists that are not visible.
+`
+        : `
+現場意圖：出了問題、要立即跟進。
+- title 與 actionItems 必須是「下一步現場行動」（誰做什麼）。
+- findings 只列照片／備註裡清楚可見的缺陷。
+- 不要發明未出現的 HyD、XPMS、圍欄、開挖或巡檢清單。
+`
+      : fieldIntent === "done"
+        ? keepSourceLang
+          ? `
+Field intent: JOB FINISHED. This is progress / completion proof.
+- category is usually PROGRESS; severity LOW.
+- findings empty unless a leftover defect is clearly visible.
+- recommendation is optional archive notes, never "fix immediately".
+- title should describe the completed work, not a problem.
+`
+          : `
+現場意圖：作業已完成，需要存檔證明。
+- category 通常 PROGRESS；severity 通常 LOW。
+- findings 預設為空；除非殘留缺陷清楚可見。
+- recommendation 為可選存檔備註，禁止寫「立即整改」。
+- title 描述已完成的工作，不是問題。
+`
+        : "";
 
   try {
     const client = getAIClient();
@@ -465,7 +507,7 @@ Do not invent inspection checklists.
         text: keepSourceLang
           ? `You are the AxonCase inbox analyst. Use only the provided text and photos. Do not invent site incidents.
 ${langLine}
-${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
+${emailRules}${analysisMode === "record" ? recordRules : discoverRules}${fieldIntentRules}
 Return JSON only:
 {
   "title":"one-line title from the primary forwarded message",
@@ -488,7 +530,7 @@ tags: 3–8 short tags from the source, no #.
 Source:
 ${input.text || "(none)"}${threadNote}${docNote}`
           : `你是 AxonCase 收件分析助手。只根據用戶提供的文字與照片作答，不要用工地常識補完不存在的事故。
-${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discoverRules}
+${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discoverRules}${fieldIntentRules}
 ${langLine}
 {
   "title":"一句話標題（必須反映原文）",

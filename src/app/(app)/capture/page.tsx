@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -25,19 +24,7 @@ import {
 import { isProbablyImage, isBrowserUnsupportedImage } from "@/lib/media";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/components/I18nProvider";
-import { appendGeoToForm, emptyCaptureGeo, type CaptureGeo } from "@/lib/capture-geo";
-
-const CaptureGeoPanel = dynamic(
-  () => import("@/components/capture/CaptureGeoPanel").then((m) => m.CaptureGeoPanel),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[200px] items-center justify-center rounded-xl bg-slate-50 text-xs text-slate-400">
-        <Loader2 size={16} className="animate-spin" />
-      </div>
-    ),
-  },
-);
+import { appendGeoToForm, emptyCaptureGeo, readDeviceGeo, type CaptureGeo } from "@/lib/capture-geo";
 
 type Finding = {
   type: string;
@@ -104,6 +91,11 @@ export default function CapturePage() {
       .catch(() => undefined);
     apiFetch<{ tags?: string[] }>("/api/evidence?suggestTags=1").then((res) => {
       if (res.ok) setSuggestedTags(res.data?.tags || []);
+    });
+    void readDeviceGeo({ timeoutMs: 8000 }).then((next) => {
+      if (next.lat != null || next.headingDeg != null) {
+        setGeo({ lat: next.lat, lng: next.lng, headingDeg: next.headingDeg });
+      }
     });
   }, []);
 
@@ -320,7 +312,6 @@ export default function CapturePage() {
                     </div>
                   )}
                 </button>
-                <CaptureGeoPanel value={geo} onChange={setGeo} />
               </div>
             )}
 

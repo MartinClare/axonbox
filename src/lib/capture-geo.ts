@@ -79,14 +79,87 @@ export async function requestOrientationPermission(): Promise<boolean> {
   return true;
 }
 
+type AxonNativeBridge = {
+  latestGeo: () => string;
+  requestLocationPermission: () => void;
+  hasLocationPermission: () => boolean;
+};
+
+function axonNative(): AxonNativeBridge | null {
+  if (typeof window === "undefined") return null;
+  const n = (window as unknown as { AxonNative?: AxonNativeBridge }).AxonNative;
+  if (!n || typeof n.latestGeo !== "function") return null;
+  return n;
+}
+
+function parseNativeGeo(raw: string): CaptureGeo & { denied?: boolean } {
+  try {
+    const o = JSON.parse(raw) as {
+      lat?: number | null;
+      lng?: number | null;
+      headingDeg?: number | null;
+      denied?: boolean;
+    };
+    return {
+      lat: typeof o.lat === "number" && Number.isFinite(o.lat) ? o.lat : null,
+      lng: typeof o.lng === "number" && Number.isFinite(o.lng) ? o.lng : null,
+      headingDeg: clampHeading(typeof o.headingDeg === "number" ? o.headingDeg : null),
+      denied: Boolean(o.denied),
+    };
+  } catch {
+    return { ...emptyCaptureGeo() };
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readNativeGeo(timeoutMs: number): Promise<(CaptureGeo & { error?: "denied" | "unavailable" }) | null> {
+  const native = axonNative();
+  if (!native) return null;
+  try {
+    native.requestLocationPermission();
+  } catch {
+    /* bridge may throw if WebView is tearing down */
+  }
+  const start = Date.now();
+  let last = parseNativeGeo(native.latestGeo());
+  while (Date.now() - start < timeoutMs) {
+    last = parseNativeGeo(native.latestGeo());
+    if (last.denied) {
+      return { lat: last.lat, lng: last.lng, headingDeg: last.headingDeg, error: "denied" };
+    }
+    if (last.lat != null && last.lng != null) {
+      return { lat: last.lat, lng: last.lng, headingDeg: last.headingDeg };
+    }
+    await sleep(250);
+  }
+  if (last.lat != null && last.lng != null) {
+    return { lat: last.lat, lng: last.lng, headingDeg: last.headingDeg };
+  }
+  return {
+    lat: last.lat,
+    lng: last.lng,
+    headingDeg: last.headingDeg,
+    error: last.denied ? "denied" : "unavailable",
+  };
+}
+
 export async function readDeviceGeo(opts?: {
   timeoutMs?: number;
 }): Promise<CaptureGeo & { error?: "denied" | "unavailable" }> {
   const timeoutMs = opts?.timeoutMs ?? 12000;
   const geo: CaptureGeo = emptyCaptureGeo();
 
+  const nativeFix = await readNativeGeo(timeoutMs);
+  if (nativeFix) {
+    if (nativeFix.lat != null && nativeFix.lng != null) return nativeFix;
+    if (nativeFix.error === "denied") return nativeFix;
+  }
+
   if (!navigator.geolocation) {
-    return { ...geo, error: "unavailable" };
+    return nativeFix || { ...geo, error: "unavailable" };
   }
 
   try {
@@ -148,6 +221,10 @@ export async function readDeviceGeo(opts?: {
       window.addEventListener("deviceorientation", onRel as EventListener);
     });
     if (heading != null) geo.headingDeg = heading;
+  }
+
+  if (geo.headingDeg == null && nativeFix?.headingDeg != null) {
+    geo.headingDeg = nativeFix.headingDeg;
   }
 
   return geo;

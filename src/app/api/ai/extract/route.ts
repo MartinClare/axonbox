@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractFromInput, transcribeAudio } from "@/lib/ai";
+import {
+  analysisModeForFieldIntent,
+  extractFromInput,
+  transcribeAudio,
+  type FieldIntent,
+} from "@/lib/ai";
 import { requireSession } from "@/lib/session";
 import { isProbablyImage } from "@/lib/media";
+
+function parseFieldIntent(raw: unknown): FieldIntent | undefined {
+  const v = String(raw || "").trim();
+  if (v === "later" || v === "issue" || v === "done") return v;
+  return undefined;
+}
 
 export async function POST(req: NextRequest) {
   const { error } = await requireSession();
@@ -11,10 +22,13 @@ export async function POST(req: NextRequest) {
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
     const text = String(form.get("text") || "");
-    const analysisMode =
+    const fieldIntent = parseFieldIntent(form.get("fieldIntent"));
+    const analysisMode = analysisModeForFieldIntent(
+      fieldIntent,
       String(form.get("analysisMode") || form.get("mode") || "discover") === "record"
         ? "record"
-        : "discover";
+        : "discover",
+    );
     const file = form.get("file");
     let imageBase64: string | undefined;
     let imageMime: string | undefined;
@@ -51,12 +65,17 @@ export async function POST(req: NextRequest) {
       imageMime,
       filename,
       analysisMode,
+      fieldIntent,
     });
     return NextResponse.json(result);
   }
 
   const body = await req.json();
-  const analysisMode = body.analysisMode === "record" ? "record" : "discover";
+  const fieldIntent = parseFieldIntent(body.fieldIntent);
+  const analysisMode = analysisModeForFieldIntent(
+    fieldIntent,
+    body.analysisMode === "record" ? "record" : "discover",
+  );
   const result = await extractFromInput({
     text: body.text,
     imageBase64: body.imageBase64,
@@ -64,6 +83,7 @@ export async function POST(req: NextRequest) {
     filename: body.filename,
     mode: body.mode,
     analysisMode,
+    fieldIntent,
     documentNote: body.documentNote,
   });
   return NextResponse.json(result);

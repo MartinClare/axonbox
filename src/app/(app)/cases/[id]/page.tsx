@@ -17,6 +17,7 @@ import {
   findAfterEvidence,
   parseEvidenceTags,
   tagsIncludeAfter,
+  tagsIncludeFieldCompletion,
 } from "@/lib/case-closeout";
 import {
   caseLoopSubtitle,
@@ -124,6 +125,19 @@ export default function CaseDetailPage() {
     assigneeId: "",
     subcontractorId: "",
   });
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
+  const [fieldLibrary, setFieldLibrary] = useState<
+    Array<{
+      id: string;
+      title: string;
+      filePath: string | null;
+      mime: string | null;
+      tagsJson?: string | null;
+      caseId?: string | null;
+    }>
+  >([]);
+  const [fieldLibraryLoading, setFieldLibraryLoading] = useState(false);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
 
   function flash(text: string, err = false) {
     setMsg(text);
@@ -298,6 +312,95 @@ export default function CaseDetailPage() {
       return;
     }
     flash(t("case.markAfterOk"));
+    await load();
+  }
+
+  async function openFieldPhotoPicker() {
+    setFieldPickerOpen(true);
+    setFieldLibraryLoading(true);
+    setSelectedFieldIds([]);
+    const res = await apiFetch<{
+      items?: Array<{
+        id: string;
+        title: string;
+        filePath: string | null;
+        mime: string | null;
+        tagsJson?: string | null;
+        caseId?: string | null;
+        type?: string;
+      }>;
+    }>("/api/evidence?linked=0&pageSize=64");
+    setFieldLibraryLoading(false);
+    if (!res.ok) {
+      setFieldLibrary([]);
+      flash(res.error || t("case.pickFieldPhotosFail"), true);
+      return;
+    }
+    const afterIds = new Set(afterPhotos.map((e) => e.id));
+    const unlinked = (res.data?.items || []).filter((e) => {
+      if (afterIds.has(e.id)) return false;
+      if (e.mime && !e.mime.startsWith("image/") && e.type !== "PHOTO") return false;
+      return true;
+    });
+    // Prefer field completion / defer tags at the top.
+    unlinked.sort((a, b) => {
+      const aDone = tagsIncludeFieldCompletion(a.tagsJson) ? 0 : 1;
+      const bDone = tagsIncludeFieldCompletion(b.tagsJson) ? 0 : 1;
+      return aDone - bDone;
+    });
+    // Also offer this case’s own photos that are not yet after-proof.
+    const onCase =
+      item?.evidence.filter((e) => !tagsIncludeAfter(e.tagsJson) && !afterIds.has(e.id)) || [];
+    const merged = [
+      ...unlinked.map((e) => ({
+        id: e.id,
+        title: e.title,
+        filePath: e.filePath,
+        mime: e.mime ?? null,
+        tagsJson: e.tagsJson ?? null,
+        caseId: e.caseId ?? null,
+      })),
+      ...onCase.map((e) => ({
+        id: e.id,
+        title: e.title,
+        filePath: e.filePath,
+        mime: e.mime ?? null,
+        tagsJson: e.tagsJson ?? null,
+        caseId: id as string,
+      })),
+    ];
+    const seen = new Set<string>();
+    setFieldLibrary(merged.filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true))));
+  }
+
+  function toggleFieldPhoto(evidenceId: string) {
+    setSelectedFieldIds((prev) =>
+      prev.includes(evidenceId) ? prev.filter((x) => x !== evidenceId) : [...prev, evidenceId],
+    );
+  }
+
+  async function useSelectedFieldPhotos() {
+    if (!selectedFieldIds.length) return;
+    setBusy(true);
+    flash("");
+    let ok = 0;
+    for (const evidenceId of selectedFieldIds) {
+      const res = await fetch(`/api/evidence/${evidenceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId: id, markAfter: true }),
+      });
+      if (res.ok) ok += 1;
+    }
+    setBusy(false);
+    if (ok === 0) {
+      flash(t("case.pickFieldPhotosFail"), true);
+      return;
+    }
+    flash(t("case.pickFieldPhotosOk", { n: ok }));
+    setFieldPickerOpen(false);
+    setSelectedFieldIds([]);
+    setWaiveOpen(false);
     await load();
   }
 
@@ -864,7 +967,86 @@ export default function CaseDetailPage() {
               >
                 {t("case.attachAfter")}
               </button>
+              <button
+                type="button"
+                disabled={busy || item.status === "CLOSED"}
+                onClick={() => void openFieldPhotoPicker()}
+                className="rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 disabled:opacity-50"
+              >
+                {t("case.pickFieldPhotos")}
+              </button>
+              {fieldPickerOpen && (
+                <button
+                  type="button"
+                  onClick={() => setFieldPickerOpen(false)}
+                  className="rounded-lg border px-3 py-2 text-sm text-slate-600"
+                >
+                  {t("case.pickFieldPhotosClose")}
+                </button>
+              )}
             </div>
+            {fieldPickerOpen && (
+              <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+                <p className="mb-2 text-xs text-slate-600">{t("case.pickFieldPhotosHint")}</p>
+                {fieldLibraryLoading ? (
+                  <p className="py-6 text-center text-sm text-slate-500">{t("case.pickFieldPhotosLoading")}</p>
+                ) : fieldLibrary.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-slate-500">{t("case.pickFieldPhotosEmpty")}</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                      {fieldLibrary.map((e) => {
+                        const href = mediaUrl(e.filePath);
+                        const image = Boolean(e.mime?.startsWith("image/") && href);
+                        const selected = selectedFieldIds.includes(e.id);
+                        const fieldShot = tagsIncludeFieldCompletion(e.tagsJson);
+                        return (
+                          <button
+                            key={e.id}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => toggleFieldPhoto(e.id)}
+                            className={cn(
+                              "relative overflow-hidden rounded-lg border bg-white text-left",
+                              selected
+                                ? "border-emerald-600 ring-2 ring-emerald-500/40"
+                                : "border-slate-200",
+                            )}
+                          >
+                            {image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={href!} alt="" className="h-20 w-full object-cover" />
+                            ) : (
+                              <div className="flex h-20 items-center justify-center px-1 text-center text-[10px] text-slate-500">
+                                {e.title}
+                              </div>
+                            )}
+                            {fieldShot && (
+                              <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[9px] text-white">
+                                {t("case.fieldShotBadge")}
+                              </span>
+                            )}
+                            {selected && (
+                              <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white">
+                                ✓
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy || selectedFieldIds.length === 0}
+                      onClick={() => void useSelectedFieldPhotos()}
+                      className="mt-3 w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {t("case.pickFieldPhotosUse", { n: selectedFieldIds.length })}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <button
                 disabled={busy}
@@ -983,6 +1165,23 @@ export default function CaseDetailPage() {
               className="mt-2 rounded-lg border border-[var(--axon-blue)] bg-[var(--axon-blue)]/5 px-3 py-1.5 text-xs text-[var(--axon-blue)] disabled:opacity-50"
             >
               {t("case.attachAfter")}
+            </button>
+            <button
+              type="button"
+              disabled={busy || item.status === "CLOSED"}
+              onClick={() => {
+                setTab("details");
+                void openFieldPhotoPicker();
+                setTimeout(() => {
+                  document.getElementById("case-loop-close")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }, 50);
+              }}
+              className="ml-2 mt-2 rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800 disabled:opacity-50"
+            >
+              {t("case.pickFieldPhotos")}
             </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

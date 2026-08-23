@@ -2,6 +2,17 @@
 
 const AFTER_TAGS = new Set(["after", "整改後", "closeout", "整改后"]);
 
+/** Field camera “job finished” / defer tags — pickable later as after-proof in the office. */
+const FIELD_COMPLETION_TAGS = new Set([
+  "完工",
+  "完成作業",
+  "稍後整理",
+  "after",
+  "整改後",
+  "closeout",
+  "整改后",
+]);
+
 export function parseEvidenceTags(tagsJson: string | null | undefined): string[] {
   if (!tagsJson) return [];
   try {
@@ -18,6 +29,13 @@ export function parseEvidenceTags(tagsJson: string | null | undefined): string[]
 
 export function tagsIncludeAfter(tagsJson: string | null | undefined): boolean {
   return parseEvidenceTags(tagsJson).some((t) => AFTER_TAGS.has(t.toLowerCase()) || AFTER_TAGS.has(t));
+}
+
+/** True if this evidence was saved from field completion / defer intents. */
+export function tagsIncludeFieldCompletion(tagsJson: string | null | undefined): boolean {
+  return parseEvidenceTags(tagsJson).some(
+    (t) => FIELD_COMPLETION_TAGS.has(t) || FIELD_COMPLETION_TAGS.has(t.toLowerCase()),
+  );
 }
 
 export function ensureAfterTag(tagsJson: string | null | undefined): string {

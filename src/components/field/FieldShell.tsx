@@ -39,10 +39,18 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
   const session = useSession();
   const { t } = useI18n();
   const user = session.data?.user;
+  const camera = pathname.startsWith("/m/capture");
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col bg-[var(--background)]">
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[var(--axon-brand)] px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
+    <div className={cn("mx-auto flex min-h-dvh w-full max-w-lg flex-col", camera ? "bg-black" : "bg-[var(--background)]")}>
+      <header
+        className={cn(
+          "z-40 flex items-center justify-between px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white",
+          camera
+            ? "absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent"
+            : "sticky top-0 border-b border-white/10 bg-[var(--axon-brand)]",
+        )}
+      >
         <div className="flex min-w-0 items-center gap-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-192.png" alt="" className="h-8 w-8 rounded-lg object-cover ring-2 ring-[var(--axon-signal)]/70" />
@@ -54,7 +62,7 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <div className="flex items-center gap-0.5">
-          <ThemeToggle compact />
+          {!camera && <ThemeToggle compact />}
           <Link
             href="/?desktop=1"
             className="rounded-lg p-2 text-white/80 hover:bg-white/10"
@@ -73,7 +81,14 @@ export function FieldShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
+      <main
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          camera
+            ? "pb-[calc(4.75rem+env(safe-area-inset-bottom))]"
+            : "px-4 py-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))]",
+        )}
+      >
         {children}
       </main>
 

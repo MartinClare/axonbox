@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AxonCase</string>
+    <string name="camera_permission_needed">Allow camera so you can take site photos.</string>
+    <string name="location_permission_needed">Allow location so photos can keep a map pin.</string>
+    <string name="offline_title">Cannot reach AxonCase</string>
+    <string name="offline_retry">Retry</string>
+    <string name="file_chooser_title">Add photo</string>
+    <string name="take_photo">Take photo</string>
+    <string name="choose_file">Choose file</string>
+</resources>

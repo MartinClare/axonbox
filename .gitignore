@@ -47,6 +47,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Android package
+/android-app/.gradle/
+/android-app/build/
+/android-app/app/build/
+/android-app/local.properties
+/android-app/.idea/
+*.apk
+*.aab
 .cursor/
 logs/
 tmp-real-case-pack.pdf

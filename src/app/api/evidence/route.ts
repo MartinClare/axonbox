@@ -197,9 +197,17 @@ export async function POST(req: NextRequest) {
           file,
           projectId: project.id,
           source,
-          title,
+          title: finalTitle || title,
           tagsJson,
           caseId,
+          lat: clientLat,
+          lng: clientLng,
+          headingDeg: clientHeading,
+          chatText: chatText || undefined,
+          aiJson: providedAiJson,
+          category,
+          severity,
+          location,
         });
         created.push(row);
       }
@@ -305,10 +313,18 @@ async function persistEvidenceFile(opts: {
   title: string;
   tagsJson: string;
   caseId?: string;
+  lat?: number | null;
+  lng?: number | null;
+  headingDeg?: number | null;
+  chatText?: string;
+  aiJson?: string;
+  category?: string;
+  severity?: string;
+  location?: string;
 }) {
   const saved = await saveUpload(opts.file, "evidence");
-  let lat: number | null = null;
-  let lng: number | null = null;
+  let lat = opts.lat ?? null;
+  let lng = opts.lng ?? null;
   let exifJson: string | undefined;
   const image = opts.file.type.startsWith("image/") || isImageName(opts.file.name);
   if (image) {
@@ -316,9 +332,11 @@ async function persistEvidenceFile(opts: {
       const exif = await exifr.parse(saved.bytes);
       if (exif) {
         exifJson = JSON.stringify(exif);
-        const fromExif = latLngFromExif(exif as Record<string, unknown>);
-        lat = fromExif.lat;
-        lng = fromExif.lng;
+        if (lat == null || lng == null) {
+          const fromExif = latLngFromExif(exif as Record<string, unknown>);
+          if (lat == null) lat = fromExif.lat;
+          if (lng == null) lng = fromExif.lng;
+        }
       }
     } catch {
       /* ignore */
@@ -332,12 +350,18 @@ async function persistEvidenceFile(opts: {
       mime: saved.mime,
       lat,
       lng,
+      headingDeg: opts.headingDeg ?? undefined,
       exifJson,
+      chatText: opts.chatText,
+      aiJson: opts.aiJson,
+      category: opts.category,
+      severity: opts.severity,
+      location: opts.location,
       tagsJson: opts.tagsJson,
       source: opts.source,
       projectId: opts.projectId,
       caseId: opts.caseId,
-      status: "PENDING",
+      status: opts.caseId ? "IN_PROGRESS" : "PENDING",
     },
   });
 }
