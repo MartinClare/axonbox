@@ -74,7 +74,10 @@ export default function FieldCapturePage() {
   const albumRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const shutterLockRef = useRef(false);
+  const shotCountRef = useRef(0);
   const [liveReady, setLiveReady] = useState(false);
+  const [shutterFlash, setShutterFlash] = useState(false);
   const [shots, setShots] = useState<Shot[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -95,6 +98,82 @@ export default function FieldCapturePage() {
 
   const active = shots.find((s) => s.id === activeId) || shots[shots.length - 1] || null;
   const hasGeo = geo.lat != null && geo.lng != null;
+  shotCountRef.current = shots.length;
+
+  function pushShot(file: File) {
+    if (shotCountRef.current >= MAX_PHOTOS) return;
+    const shot: Shot = { id: newShotId(), file, url: URL.createObjectURL(file) };
+    shotCountRef.current += 1;
+    setShots((prev) => {
+      if (prev.length >= MAX_PHOTOS) {
+        URL.revokeObjectURL(shot.url);
+        shotCountRef.current = prev.length;
+        return prev;
+      }
+      return [...prev, shot];
+    });
+    setActiveId(shot.id);
+    void captureGeo();
+  }
+
+  async function snapFromLivePreview(): Promise<boolean> {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!stream || !video || video.readyState < 2 || video.videoWidth < 2) return false;
+    if (shotCountRef.current >= MAX_PHOTOS) return true;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return false;
+    ctx.drawImage(video, 0, 0);
+
+    // Prefer sync dataURL on WebView — toBlob is often delayed/queued.
+    let blob: Blob | null = null;
+    try {
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+      const comma = dataUrl.indexOf(",");
+      const bin = atob(dataUrl.slice(comma + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      blob = new Blob([bytes], { type: "image/jpeg" });
+    } catch {
+      blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9),
+      );
+    }
+    if (!blob || blob.size < 100) return false;
+
+    pushShot(
+      new File([blob], `field-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+      }),
+    );
+    return true;
+  }
+
+  async function onShutter() {
+    if (shutterLockRef.current) return;
+    if (shotCountRef.current >= MAX_PHOTOS) return;
+    shutterLockRef.current = true;
+    setShutterFlash(true);
+    try {
+      const snapped = await snapFromLivePreview();
+      if (!snapped) {
+        // Native one-shot needs the camera free.
+        stopLivePreview();
+        cameraRef.current?.click();
+      }
+    } finally {
+      // Cooldown so one press ≠ a burst of frames.
+      window.setTimeout(() => {
+        shutterLockRef.current = false;
+        setShutterFlash(false);
+      }, 450);
+    }
+  }
 
   function stopLivePreview() {
     const stream = streamRef.current;
@@ -172,37 +251,6 @@ export default function FieldCapturePage() {
     if (next.lat != null || next.headingDeg != null) {
       setGeo({ lat: next.lat, lng: next.lng, headingDeg: next.headingDeg });
     }
-  }
-
-  async function snapFromLivePreview(): Promise<boolean> {
-    const video = videoRef.current;
-    if (!liveReady || !video || video.videoWidth < 2) return false;
-    if (shots.length >= MAX_PHOTOS) return true;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return false;
-    ctx.drawImage(video, 0, 0);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92),
-    );
-    if (!blob) return false;
-    const file = new File([blob], `field-${Date.now()}.jpg`, {
-      type: "image/jpeg",
-      lastModified: Date.now(),
-    });
-    addFiles([file]);
-    return true;
-  }
-
-  async function onShutter() {
-    if (shots.length >= MAX_PHOTOS) return;
-    const snapped = await snapFromLivePreview();
-    if (snapped) return;
-    // Native one-shot needs the camera free.
-    stopLivePreview();
-    cameraRef.current?.click();
   }
 
   function addFiles(list: FileList | File[] | null) {
@@ -558,12 +606,23 @@ export default function FieldCapturePage() {
               </button>
               <button
                 type="button"
-                onClick={() => void onShutter()}
-                disabled={shots.length >= MAX_PHOTOS}
-                className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-[3px] border-white bg-white/20 disabled:opacity-40"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  void onShutter();
+                }}
+                disabled={shots.length >= MAX_PHOTOS || shutterFlash}
+                className={cn(
+                  "flex h-[72px] w-[72px] items-center justify-center rounded-full border-[3px] border-white bg-white/20 transition disabled:opacity-40",
+                  shutterFlash && "scale-90 bg-white/50",
+                )}
                 aria-label={t("field.shot")}
               >
-                <span className="h-14 w-14 rounded-full bg-white" />
+                <span
+                  className={cn(
+                    "h-14 w-14 rounded-full bg-white transition",
+                    shutterFlash && "scale-90 opacity-70",
+                  )}
+                />
               </button>
               {shots.length > 0 ? (
                 <button
