@@ -213,12 +213,17 @@ export async function parseYCloudInboundEvent(
 
   if (!inbound) return { ackOnly: true, message: null };
 
-  // Shared YCloud account with Eesee Chat: only intake for OUR display number
-  // (WHATSAPP_DISPLAY_NUMBER, e.g. +85253688279). Ignore Eesee's +85252907211.
-  const ourDigits = normalizePhone(process.env.WHATSAPP_DISPLAY_NUMBER || "");
+  // Shared YCloud WABA with Eesee Chat (+85252907211) and StarChat (+85252951530).
+  // Only ingest messages addressed to the AxonCase intake number.
+  const ourDigits = normalizePhone(
+    process.env.WHATSAPP_DISPLAY_NUMBER || "+85253688279",
+  );
   const toDigits = normalizePhone(inbound.to || "");
-  if (ourDigits && toDigits && ourDigits !== toDigits) {
-    console.log("[whatsapp] ignore inbound for other business number", toDigits);
+  const foreignDigits = new Set(
+    ["+85252907211", "+85252951530"].map((n) => normalizePhone(n)),
+  );
+  if (toDigits && (foreignDigits.has(toDigits) || (ourDigits && toDigits !== ourDigits))) {
+    console.log("[whatsapp] ignore inbound for other product number", toDigits);
     return { ackOnly: true, message: null };
   }
 

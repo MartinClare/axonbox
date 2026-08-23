@@ -16,6 +16,7 @@ export const maxDuration = 120;
  *   Events: whatsapp.inbound_message.received
  *   Env: YCLOUD_API_KEY, YCLOUD_WEBHOOK_SECRET
  *   Intake number (CS only, not shown in UI): WHATSAPP_DISPLAY_NUMBER=+85253688279
+ *   Do not ingest Eesee (+85252907211) or StarChat (+85252951530) on the shared YCloud account.
  */
 export async function GET() {
   return NextResponse.json({ ok: true, provider: "ycloud", connector: "whatsapp" });
