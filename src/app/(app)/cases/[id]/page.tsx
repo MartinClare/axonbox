@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Timeline } from "@/components/Timeline";
@@ -13,7 +13,11 @@ import {
 } from "@/lib/labels";
 import { mediaUrl } from "@/lib/media";
 import { apiFetch, asArray } from "@/lib/api-client";
-import { hasAfterEvidence, parseEvidenceTags, tagsIncludeAfter } from "@/lib/case-closeout";
+import {
+  findAfterEvidence,
+  parseEvidenceTags,
+  tagsIncludeAfter,
+} from "@/lib/case-closeout";
 import {
   caseLoopSubtitle,
   getCaseLoopState,
@@ -107,6 +111,7 @@ export default function CaseDetailPage() {
   const [msgErr, setMsgErr] = useState(false);
   const [waiveOpen, setWaiveOpen] = useState(false);
   const [waiveNote, setWaiveNote] = useState("");
+  const afterPhotoInputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({
     title: "",
@@ -170,17 +175,18 @@ export default function CaseDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const afterReady = useMemo(() => {
-    if (!item) return false;
-    return hasAfterEvidence(
+  const afterPhotos = useMemo(() => {
+    if (!item) return [];
+    return findAfterEvidence(
       item.evidence.map((e) => ({
-        id: e.id,
+        ...e,
         createdAt: e.createdAt || item.discoveredAt,
-        tagsJson: e.tagsJson,
       })),
       item.events,
     );
   }, [item]);
+
+  const afterReady = afterPhotos.length > 0;
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -251,6 +257,32 @@ export default function CaseDetailPage() {
     }
     if (data.filePath) window.open(data.filePath, "_blank");
     flash(t("case.packOk"));
+  }
+
+  async function attachAfterPhotos(files: FileList | File[]) {
+    const list = Array.from(files).filter((f) => f.size > 0).slice(0, 20);
+    if (list.length === 0) return;
+    setBusy(true);
+    flash("");
+    const form = new FormData();
+    form.set("caseId", String(id));
+    form.set("skipAi", "1");
+    form.set("source", "UPLOAD");
+    form.set("tagsJson", JSON.stringify(["整改後"]));
+    for (const file of list) form.append("file", file);
+    const res = await fetch("/api/evidence", { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      flash((data as { error?: string }).error || t("case.attachAfterFail"), true);
+      return;
+    }
+    const n = Array.isArray((data as { items?: unknown[] }).items)
+      ? (data as { items: unknown[] }).items.length
+      : 1;
+    flash(t("case.attachAfterOk", { n }));
+    setWaiveOpen(false);
+    await load();
   }
 
   async function markAfter(evidenceId: string) {
@@ -377,8 +409,10 @@ export default function CaseDetailPage() {
       return;
     }
     if (action === "after_proof") {
-      setTab("files");
-      flash(t("case.markAfterHint"), true);
+      setTab("details");
+      setTimeout(() => {
+        document.getElementById("case-loop-close")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
       return;
     }
     if (action === "close") {
@@ -393,6 +427,17 @@ export default function CaseDetailPage() {
 
   return (
     <div className="space-y-6">
+      <input
+        ref={afterPhotoInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) void attachAfterPhotos(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xs text-slate-400">{item.caseNo}</div>
@@ -780,6 +825,46 @@ export default function CaseDetailPage() {
           <section id="case-loop-close" className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-2">
             <h2 className="mb-3 text-sm font-semibold">{t("case.step4")}</h2>
             <p className="mb-3 text-xs text-slate-500">{t("case.step4Hint")}</p>
+            {afterPhotos.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-2 text-xs font-medium text-emerald-700">
+                  {t("case.attachAfterCount", { n: afterPhotos.length })}
+                </p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                  {afterPhotos.map((e) => {
+                    const href = mediaUrl(e.filePath);
+                    const image = Boolean(e.mime?.startsWith("image/") && href);
+                    return (
+                      <Link
+                        key={e.id}
+                        href={`/evidence?id=${e.id}`}
+                        className="overflow-hidden rounded-lg border border-emerald-100 bg-slate-50"
+                      >
+                        {image ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={href!} alt="" className="h-20 w-full object-cover" />
+                        ) : (
+                          <div className="flex h-20 items-center justify-center px-1 text-center text-[10px] text-slate-500">
+                            {e.title}
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <p className="mb-2 text-xs text-slate-400">{t("case.attachAfterHint")}</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy || item.status === "CLOSED"}
+                onClick={() => afterPhotoInputRef.current?.click()}
+                className="rounded-lg border border-[var(--axon-blue)] bg-[var(--axon-blue)]/5 px-3 py-2 text-sm text-[var(--axon-blue)] disabled:opacity-50"
+              >
+                {t("case.attachAfter")}
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 disabled={busy}
@@ -843,6 +928,14 @@ export default function CaseDetailPage() {
                   </button>
                   <button
                     type="button"
+                    disabled={busy}
+                    onClick={() => afterPhotoInputRef.current?.click()}
+                    className="rounded-lg border border-[var(--axon-blue)] px-3 py-1.5 text-xs text-[var(--axon-blue)]"
+                  >
+                    {t("case.attachAfter")}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       setWaiveOpen(false);
                       setTab("files");
@@ -883,6 +976,14 @@ export default function CaseDetailPage() {
             <p className="mt-0.5 text-xs text-slate-500">
               {afterReady ? t("case.step3Ready") : t("case.step3Need")}
             </p>
+            <button
+              type="button"
+              disabled={busy || item.status === "CLOSED"}
+              onClick={() => afterPhotoInputRef.current?.click()}
+              className="mt-2 rounded-lg border border-[var(--axon-blue)] bg-[var(--axon-blue)]/5 px-3 py-1.5 text-xs text-[var(--axon-blue)] disabled:opacity-50"
+            >
+              {t("case.attachAfter")}
+            </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {item.evidence.map((e) => {

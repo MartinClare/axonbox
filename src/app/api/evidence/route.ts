@@ -144,10 +144,22 @@ export async function POST(req: NextRequest) {
     const tagsJson = parseTagsJson(form.get("tagsJson"));
     const skipAi = String(form.get("skipAi") || "") === "1";
     const providedAiJson = String(form.get("aiJson") || "").trim() || undefined;
-    const file = form.get("file");
-    let clientLat = parseGeoField(form.get("lat"));
-    let clientLng = parseGeoField(form.get("lng"));
-    let clientHeading = clampHeading(parseGeoField(form.get("headingDeg")));
+    const files = form
+      .getAll("file")
+      .filter((f): f is File => f instanceof File && f.size > 0);
+    const caseIdRaw = String(form.get("caseId") || "").trim();
+    let caseId: string | undefined;
+    if (caseIdRaw) {
+      const found = await prisma.case.findUnique({
+        where: { id: caseIdRaw },
+        select: { id: true },
+      });
+      if (!found) return NextResponse.json({ error: "Case not found" }, { status: 404 });
+      caseId = found.id;
+    }
+    const clientLat = parseGeoField(form.get("lat"));
+    const clientLng = parseGeoField(form.get("lng"));
+    const clientHeading = clampHeading(parseGeoField(form.get("headingDeg")));
     let filePath: string | undefined;
     let mime: string | undefined;
     let exifJson: string | undefined;
@@ -157,6 +169,9 @@ export async function POST(req: NextRequest) {
     let severity: string | undefined;
     let location: string | undefined;
     let finalTitle = title;
+    let lat = clientLat;
+    let lng = clientLng;
+    let headingDeg = clientHeading;
 
     if (providedAiJson) {
       try {
@@ -175,7 +190,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (file instanceof File && file.size > 0) {
+    if (files.length > 1) {
+      const created = [];
+      for (const file of files.slice(0, 20)) {
+        const row = await persistEvidenceFile({
+          file,
+          projectId: project.id,
+          source,
+          title,
+          tagsJson,
+          caseId,
+        });
+        created.push(row);
+      }
+      return NextResponse.json({ items: created, count: created.length }, { status: 201 });
+    }
+
+    const file = files[0];
+    if (file) {
       const saved = await saveUpload(file, "evidence");
       filePath = saved.filePath;
       mime = saved.mime;
@@ -185,10 +217,10 @@ export async function POST(req: NextRequest) {
           const exif = await exifr.parse(saved.bytes);
           if (exif) {
             exifJson = JSON.stringify(exif);
-            if (clientLat == null || clientLng == null) {
+            if (lat == null || lng == null) {
               const fromExif = latLngFromExif(exif as Record<string, unknown>);
-              if (clientLat == null) clientLat = fromExif.lat;
-              if (clientLng == null) clientLng = fromExif.lng;
+              if (lat == null) lat = fromExif.lat;
+              if (lng == null) lng = fromExif.lng;
             }
           }
         } catch {
@@ -245,9 +277,9 @@ export async function POST(req: NextRequest) {
         location,
         filePath,
         mime,
-        lat: clientLat,
-        lng: clientLng,
-        headingDeg: clientHeading,
+        lat,
+        lng,
+        headingDeg,
         exifJson,
         aiJson,
         chatText: chatText || null,
@@ -256,6 +288,7 @@ export async function POST(req: NextRequest) {
         category,
         severity,
         projectId: project.id,
+        caseId: caseId || undefined,
         status: "PENDING",
       },
     });
@@ -263,6 +296,50 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ error: "multipart required" }, { status: 400 });
+}
+
+async function persistEvidenceFile(opts: {
+  file: File;
+  projectId: string;
+  source: string;
+  title: string;
+  tagsJson: string;
+  caseId?: string;
+}) {
+  const saved = await saveUpload(opts.file, "evidence");
+  let lat: number | null = null;
+  let lng: number | null = null;
+  let exifJson: string | undefined;
+  const image = opts.file.type.startsWith("image/") || isImageName(opts.file.name);
+  if (image) {
+    try {
+      const exif = await exifr.parse(saved.bytes);
+      if (exif) {
+        exifJson = JSON.stringify(exif);
+        const fromExif = latLngFromExif(exif as Record<string, unknown>);
+        lat = fromExif.lat;
+        lng = fromExif.lng;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return prisma.evidence.create({
+    data: {
+      type: image ? "PHOTO" : opts.file.type.startsWith("audio/") ? "VOICE" : "DOC",
+      title: opts.title || opts.file.name || "未命名證據",
+      filePath: saved.filePath,
+      mime: saved.mime,
+      lat,
+      lng,
+      exifJson,
+      tagsJson: opts.tagsJson,
+      source: opts.source,
+      projectId: opts.projectId,
+      caseId: opts.caseId,
+      status: "PENDING",
+    },
+  });
 }
 
 function isImageName(name: string) {
