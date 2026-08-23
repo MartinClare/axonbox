@@ -18,6 +18,7 @@ import {
   FileUp,
   Image as ImageIcon,
   FileText,
+  Languages,
 } from "lucide-react";
 import { SEVERITY_COLORS, cn } from "@/lib/labels";
 import { apiFetch } from "@/lib/api-client";
@@ -71,6 +72,7 @@ type ExtractResult = {
   siteSummary?: string;
   mock?: boolean;
   actionItems?: Array<{ title: string; detail?: string }>;
+  outputLang?: "original" | "zh";
 };
 
 const channelIcon = {
@@ -439,6 +441,26 @@ export default function InboxPage() {
     setExtract(data.extract);
     setSelected(data.message);
     flash(t("inbox.analyzeOk"));
+    await load();
+  }
+
+  async function translateProposal() {
+    if (!selected) return;
+    setBusy(true);
+    const res = await fetch(`/api/inbox/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "translateZh" }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      flash(t("inbox.translateZhFail"));
+      return;
+    }
+    const data = await res.json();
+    setExtract(data.extract);
+    setSelected(data.message);
+    flash(t("inbox.translateZhOk"));
     await load();
   }
 
@@ -1084,9 +1106,22 @@ export default function InboxPage() {
 
               {extract && (
                 <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                    {t("inbox.proposal")}
-                    {extract.mock ? ` · ${t("inbox.mock")}` : ""}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                      {t("inbox.proposal")}
+                      {extract.mock ? ` · ${t("inbox.mock")}` : ""}
+                    </div>
+                    {selected.channel === "EMAIL" && extract.outputLang !== "zh" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void translateProposal()}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--axon-line)] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
+                        {t("inbox.translateZh")}
+                      </button>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[var(--axon-brand)] px-2.5 py-0.5 text-[11px] text-white">

@@ -1,5 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { extractFromInput, transcribeAudio, type ExtractResult } from "@/lib/ai";
+import {
+  extractFromInput,
+  transcribeAudio,
+  translateExtractToZh,
+  type ExtractResult,
+} from "@/lib/ai";
 import { nextCaseNo } from "@/lib/case-no";
 import { resolveActorId } from "@/lib/session";
 import {
@@ -16,6 +21,7 @@ import {
   whatsappBundleWindowMs,
 } from "@/lib/connectors/whatsapp";
 import { mailboxAlias } from "@/lib/email-inbound";
+import { emailAnalysisParts } from "@/lib/email-thread";
 import { resolveUserByMailbox } from "@/lib/inbound-key";
 import {
   compactStoredFile,
@@ -370,7 +376,7 @@ export async function ingestPaste(opts: {
 
 export async function analyzeInboxMessage(
   id: string,
-  opts?: { imageBase64?: string; imageMime?: string },
+  opts?: { imageBase64?: string; imageMime?: string; outputLang?: "original" | "zh" },
 ): Promise<{
   message: Awaited<ReturnType<typeof prisma.inboxMessage.findUnique>>;
   extract: ExtractResult;
@@ -408,9 +414,12 @@ export async function analyzeInboxMessage(
     }
   }
 
-  const text = [message.subject ? `主题：${message.subject}` : "", body]
-    .filter(Boolean)
-    .join("\n");
+  const emailParts =
+    message.channel === "EMAIL" ? emailAnalysisParts(message.subject || "", body) : null;
+  const text = emailParts
+    ? emailParts.text
+    : [message.subject ? `主题：${message.subject}` : "", body].filter(Boolean).join("\n");
+  const threadHistory = emailParts?.history || undefined;
 
   let imageBase64 = opts?.imageBase64;
   let imageMime = opts?.imageMime || "image/jpeg";
@@ -419,12 +428,15 @@ export async function analyzeInboxMessage(
     imageMime = photo.mime || imageMime;
   }
 
+  const outputLang = message.channel === "EMAIL" ? opts?.outputLang || "original" : "zh";
   let extract = await extractFromInput({
     text,
     imageBase64,
     imageMime,
     filename: `${message.channel}-${message.sender}`,
     mode: extractModeForChannel(message.channel),
+    threadHistory,
+    outputLang,
   });
 
   const needDoc =
@@ -455,6 +467,8 @@ export async function analyzeInboxMessage(
         imageMime,
         filename: `${message.channel}-${message.sender}`,
         mode: extractModeForChannel(message.channel),
+        threadHistory,
+        outputLang,
         documentNote: excerpts.join("\n\n"),
       });
     }
@@ -469,6 +483,29 @@ export async function analyzeInboxMessage(
     },
   });
 
+  return { message: updated, extract };
+}
+
+export async function translateInboxMessage(id: string): Promise<{
+  message: Awaited<ReturnType<typeof prisma.inboxMessage.findUnique>>;
+  extract: ExtractResult;
+}> {
+  const message = await prisma.inboxMessage.findUnique({ where: { id } });
+  if (!message) throw new Error("not found");
+  if (!message.aiJson) {
+    return analyzeInboxMessage(id, { outputLang: "zh" });
+  }
+  let current: ExtractResult;
+  try {
+    current = JSON.parse(message.aiJson) as ExtractResult;
+  } catch {
+    return analyzeInboxMessage(id, { outputLang: "zh" });
+  }
+  const extract = await translateExtractToZh(current);
+  const updated = await prisma.inboxMessage.update({
+    where: { id },
+    data: { aiJson: JSON.stringify(extract) },
+  });
   return { message: updated, extract };
 }
 

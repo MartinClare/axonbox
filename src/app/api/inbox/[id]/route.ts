@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
-import { analyzeInboxMessage, undoInboxProcess } from "@/lib/inbox";
+import { analyzeInboxMessage, translateInboxMessage, undoInboxProcess } from "@/lib/inbox";
 import { serializeInboxMessage } from "@/lib/inbox-serialize";
 
 const inboxInclude = {
@@ -30,11 +30,30 @@ export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
   const body = await req.json();
 
+  if (body.action === "translateZh") {
+    try {
+      const result = await translateInboxMessage(id);
+      const message = result.message
+        ? await prisma.inboxMessage.findUnique({
+            where: { id },
+            include: inboxInclude,
+          })
+        : null;
+      return NextResponse.json({
+        extract: result.extract,
+        message: message ? serializeInboxMessage(message, { includeFileData: true }) : result.message,
+      });
+    } catch {
+      return NextResponse.json({ error: "translate failed" }, { status: 400 });
+    }
+  }
+
   if (body.action === "analyze") {
     try {
       const result = await analyzeInboxMessage(id, {
         imageBase64: body.imageBase64,
         imageMime: body.imageMime,
+        outputLang: body.outputLang === "zh" ? "zh" : "original",
       });
       const message = result.message
         ? await prisma.inboxMessage.findUnique({

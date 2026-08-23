@@ -31,6 +31,7 @@ export type ExtractResult = {
   tags: string[];
   analysisMode: "record" | "discover";
   actionItems: InboxActionItem[];
+  outputLang?: "original" | "zh";
 };
 
 export { hasAIKey, hasOpenAIKey, getAIModel };
@@ -318,6 +319,7 @@ function normalizeExtract(
     model,
     tags: normalizeTags(parsed.tags, [modeTag]),
     analysisMode,
+    outputLang: parsed.outputLang === "zh" ? "zh" : "original",
     actionItems: (() => {
       const fromAi = normalizeActionItems(
         (parsed as ExtractResult & { actionItems?: InboxActionItem[] }).actionItems,
@@ -335,6 +337,10 @@ export async function extractFromInput(input: {
   mode?: "site" | "email" | "whatsapp";
   analysisMode?: "record" | "discover";
   documentNote?: string;
+  /** Older replies in a mail thread — background only. */
+  threadHistory?: string;
+  /** Email default is original language. `zh` only when the user asks to translate. */
+  outputLang?: "original" | "zh";
 }): Promise<ExtractResult> {
   const analysisMode = input.analysisMode === "record" ? "record" : "discover";
   const hasImage = Boolean(input.imageBase64);
@@ -346,10 +352,19 @@ export async function extractFromInput(input: {
   }
 
   const model = getAIModel();
+  const outputLang: "original" | "zh" =
+    input.mode === "email" ? (input.outputLang === "zh" ? "zh" : "original") : "zh";
+  const langLine =
+    outputLang === "zh"
+      ? "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 使用繁體中文。人名、Plan ID、路名與專有名詞可保留原文。"
+      : "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 必須跟隨來源文字的語言，不要翻譯。";
   const emailRules =
     input.mode === "email"
       ? `
-這是一封轉寄到 AxonCase 的郵件。必須以郵件主旨與正文判斷個案。
+這是一封轉寄到 AxonCase 的郵件，可能含多則來回。
+- 必須以「最新回覆」判斷個案、標題、嚴重度與 actionItems。那是現在要處理的內容。
+- 「較早郵件」只是背景（人名、地點、編號、已談過的範圍）。不要把已被後續回覆取代、已同意或已過時的舊要求當成現況。
+- 忽略簽名檔、轉寄頁首、公司頁尾。
 - 不要把 PDF／Word 全文、條款或工作清單寫進 description 或 recommendation。
 - 若有「附件摘錄」，只用來確認這是什麼個案（標題、類別、地點、嚴重度）。最多在 description 加一句「附件為…」。
 - 不要執行或展開附件裡提到的所有事項。
@@ -367,6 +382,10 @@ export async function extractFromInput(input: {
   const docNote = input.documentNote
     ? `\n附件摘錄（僅供判斷主題，勿寫進個案正文）：\n${input.documentNote}\n`
     : "";
+  const threadNote =
+    input.mode === "email" && input.threadHistory?.trim()
+      ? `\n較早郵件（只作背景，不要當成本案現況或新要求）：\n${input.threadHistory.trim().slice(0, 4000)}\n`
+      : "";
 
   const recordRules = `
 模式：記錄現況（Record）。只描述照片／文字中「看得見的現況」，不要虛構安全或質量缺陷。
@@ -388,7 +407,7 @@ export async function extractFromInput(input: {
         type: "text",
         text: `你是 AxonCase 收件分析助手。只根據用戶提供的文字與照片作答，不要用工地常識補完不存在的事故。
 ${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discoverRules}
-只回傳純 JSON，文字必須使用繁體中文：
+${langLine}
 {
   "title":"一句話標題（必須反映原文）",
   "description":"根據原文／照片的摘要，不要添加未出現的情節",
@@ -405,9 +424,9 @@ ${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discove
   "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"短標籤","detail":"具體說明","severity":"HIGH|MEDIUM|LOW"}],
   "actionItems":[{"title":"一項跟進","detail":"可選補充"}]
 }
-actionItems：把原文裡每一個獨立要求／項目符號／編號項各列一筆，語言跟隨原文，不要翻譯、不要合併、不要發明原文沒有的事項。只有一項要求時也可只列 1 筆。
-tags：3～8 個短繁中標籤，必須來自原文或照片，不要加 #。
-文字補充：${input.text || "(無)"}${docNote}`,
+actionItems：把原文裡每一個獨立要求／項目符號／編號項各列一筆，不要合併、不要發明原文沒有的事項。只有一項要求時也可只列 1 筆。
+tags：3～8 個短標籤，必須來自原文或照片，不要加 #。
+文字補充：${input.text || "(無)"}${threadNote}${docNote}`,
       },
     ];
     if (input.imageBase64) {
@@ -429,7 +448,10 @@ tags：3～8 個短繁中標籤，必須來自原文或照片，不要加 #。
     if (!parsed.title && !parsed.description && !parsed.findings?.length) {
       throw new Error(`Empty AI response: ${raw.slice(0, 200)}`);
     }
-    const extract = normalizeExtract(parsed, input, model, analysisMode);
+    const extract = {
+      ...normalizeExtract(parsed, input, model, analysisMode),
+      outputLang,
+    };
     if (extractDriftsFromSource(extract, source, hasImage)) {
       return groundedFallback(input.text);
     }
@@ -438,6 +460,66 @@ tags：3～8 個短繁中標籤，必須來自原文或照片，不要加 #。
     console.error("AI extract failed, fallback mock", err);
     const mock = mockExtract(input.text, input.filename, analysisMode);
     return extractDriftsFromSource(mock, source, hasImage) ? groundedFallback(input.text) : mock;
+  }
+}
+
+export async function translateExtractToZh(extract: ExtractResult): Promise<ExtractResult> {
+  if (!hasAIKey()) {
+    return { ...extract, outputLang: "zh" };
+  }
+  try {
+    const client = getAIClient();
+    const res = await client.chat.completions.create({
+      model: getAIModel(),
+      messages: [
+        {
+          role: "user",
+          content: `把以下個案建議譯成繁體中文。只翻譯文字，不要增刪項目，不要改 category / severity / progressPct / confidence。
+人名、Plan ID、路名、公司名、專有名詞可保留原文。
+只回傳同樣結構的 JSON。
+${JSON.stringify({
+  title: extract.title,
+  description: extract.description,
+  location: extract.location,
+  recommendation: extract.recommendation,
+  workActivity: extract.workActivity,
+  siteSummary: extract.siteSummary,
+  tags: extract.tags,
+  findings: extract.findings,
+  actionItems: extract.actionItems,
+})}`,
+        },
+      ],
+      temperature: 0.1,
+    });
+    const parsed = parseJsonLoose(res.choices[0]?.message?.content || "");
+    return {
+      ...extract,
+      title: parsed.title || extract.title,
+      description: parsed.description || extract.description,
+      location: parsed.location || extract.location,
+      recommendation: parsed.recommendation || extract.recommendation,
+      workActivity: parsed.workActivity || extract.workActivity,
+      siteSummary: parsed.siteSummary || extract.siteSummary,
+      tags: Array.isArray(parsed.tags) ? normalizeTags(parsed.tags) : extract.tags,
+      findings: Array.isArray(parsed.findings) && parsed.findings.length
+        ? parsed.findings.map((f, i) => ({
+            type: extract.findings[i]?.type || f.type || "OTHER",
+            label: f.label || extract.findings[i]?.label || "",
+            detail: f.detail || extract.findings[i]?.detail || "",
+            severity: extract.findings[i]?.severity || "MEDIUM",
+          }))
+        : extract.findings,
+      actionItems:
+        Array.isArray((parsed as ExtractResult).actionItems) &&
+        (parsed as ExtractResult).actionItems!.length
+          ? normalizeActionItems((parsed as ExtractResult).actionItems)
+          : extract.actionItems,
+      outputLang: "zh",
+    };
+  } catch (err) {
+    console.error("translate extract failed", err);
+    return { ...extract, outputLang: "zh" };
   }
 }
 
