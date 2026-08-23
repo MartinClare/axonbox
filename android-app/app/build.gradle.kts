@@ -20,6 +20,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Debug keystore so we can ship an installable APK without Play signing setup.
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
