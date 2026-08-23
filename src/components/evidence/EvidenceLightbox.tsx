@@ -21,6 +21,7 @@ import { Timeline } from "@/components/Timeline";
 import { STATUS_COLORS, cn, formatDate } from "@/lib/labels";
 import { mediaUrl } from "@/lib/media";
 import { apiFetch, safeJsonParse } from "@/lib/api-client";
+import { formatCoords, formatHeading, osmLink } from "@/lib/capture-geo";
 import {
   evidenceTags,
   isEvidenceImage,
@@ -507,6 +508,24 @@ export function EvidenceLightbox({
             <dl className="space-y-1 text-xs text-white/70">
               <div>{t("evidence.time", { v: formatDate(detail.capturedAt) })}</div>
               <div>{t("evidence.location", { v: detail.location || t("common.none") })}</div>
+              {detail.lat != null && detail.lng != null && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>
+                    {t("evidence.coords", { v: formatCoords(detail.lat, detail.lng) })}
+                  </span>
+                  {detail.headingDeg != null && (
+                    <span>{t("evidence.heading", { v: formatHeading(detail.headingDeg) })}</span>
+                  )}
+                  <a
+                    href={osmLink(detail.lat, detail.lng)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[var(--axon-signal)] hover:underline"
+                  >
+                    {t("capture.geoOpenMap")}
+                  </a>
+                </div>
+              )}
               <div>{t("evidence.source", { v: detail.source })}</div>
               {exif && (
                 <div>

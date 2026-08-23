@@ -5,6 +5,7 @@ import { saveUpload } from "@/lib/upload";
 import { extractFromInput } from "@/lib/ai";
 import { importWhatsAppMessages } from "@/lib/connectors/whatsapp";
 import { importEmailMessages } from "@/lib/connectors/email";
+import { clampHeading, latLngFromExif, parseGeoField } from "@/lib/capture-geo";
 import type { Prisma } from "@prisma/client";
 import exifr from "exifr";
 
@@ -144,6 +145,9 @@ export async function POST(req: NextRequest) {
     const skipAi = String(form.get("skipAi") || "") === "1";
     const providedAiJson = String(form.get("aiJson") || "").trim() || undefined;
     const file = form.get("file");
+    let clientLat = parseGeoField(form.get("lat"));
+    let clientLng = parseGeoField(form.get("lng"));
+    let clientHeading = clampHeading(parseGeoField(form.get("headingDeg")));
     let filePath: string | undefined;
     let mime: string | undefined;
     let exifJson: string | undefined;
@@ -179,7 +183,14 @@ export async function POST(req: NextRequest) {
         type = "PHOTO";
         try {
           const exif = await exifr.parse(saved.bytes);
-          if (exif) exifJson = JSON.stringify(exif);
+          if (exif) {
+            exifJson = JSON.stringify(exif);
+            if (clientLat == null || clientLng == null) {
+              const fromExif = latLngFromExif(exif as Record<string, unknown>);
+              if (clientLat == null) clientLat = fromExif.lat;
+              if (clientLng == null) clientLng = fromExif.lng;
+            }
+          }
         } catch {
           /* ignore */
         }
@@ -234,6 +245,9 @@ export async function POST(req: NextRequest) {
         location,
         filePath,
         mime,
+        lat: clientLat,
+        lng: clientLng,
+        headingDeg: clientHeading,
         exifJson,
         aiJson,
         chatText: chatText || null,

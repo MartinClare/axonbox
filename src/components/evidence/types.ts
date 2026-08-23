@@ -22,6 +22,9 @@ export type EvidenceItem = {
   location: string | null;
   filePath: string | null;
   mime?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  headingDeg?: number | null;
   chatText: string | null;
   status: string;
   source: string;

@@ -187,6 +187,9 @@ model Evidence {
   location   String?
   filePath   String?
   mime       String?
+  lat        Float?
+  lng        Float?
+  headingDeg Float?
   exifJson   String?
   aiJson     String?
   chatText   String?

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   Camera,
@@ -24,6 +25,19 @@ import {
 import { isProbablyImage, isBrowserUnsupportedImage } from "@/lib/media";
 import { apiFetch } from "@/lib/api-client";
 import { useI18n } from "@/components/I18nProvider";
+import { appendGeoToForm, emptyCaptureGeo, type CaptureGeo } from "@/lib/capture-geo";
+
+const CaptureGeoPanel = dynamic(
+  () => import("@/components/capture/CaptureGeoPanel").then((m) => m.CaptureGeoPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[200px] items-center justify-center rounded-xl bg-slate-50 text-xs text-slate-400">
+        <Loader2 size={16} className="animate-spin" />
+      </div>
+    ),
+  },
+);
 
 type Finding = {
   type: string;
@@ -77,6 +91,7 @@ export default function CapturePage() {
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [assigneeId, setAssigneeId] = useState("");
   const [subcontractorId, setSubcontractorId] = useState("");
+  const [geo, setGeo] = useState<CaptureGeo>(() => emptyCaptureGeo());
   const lastAnalysis = useRef<AnalysisMode>("discover");
 
   useEffect(() => {
@@ -158,6 +173,7 @@ export default function CapturePage() {
     form.set("skipAi", "1");
     if (result) form.set("aiJson", JSON.stringify({ ...result, tags }));
     if (file) form.set("file", file);
+    appendGeoToForm(form, geo);
     const evRes = await fetch("/api/evidence", { method: "POST", body: form });
     setBusy(false);
     if (!evRes.ok) {
@@ -183,6 +199,7 @@ export default function CapturePage() {
     form.set("skipAi", "1");
     form.set("aiJson", JSON.stringify({ ...result, tags }));
     if (file) form.set("file", file);
+    appendGeoToForm(form, geo);
     const evRes = await fetch("/api/evidence", { method: "POST", body: form });
     if (evRes.ok) {
       const ev = await evRes.json();
@@ -273,35 +290,38 @@ export default function CapturePage() {
 
           <div className="space-y-4 p-5">
             {mode === "photo" && (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="group relative flex min-h-[280px] w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--axon-steel)]/35 bg-[linear-gradient(160deg,#0c2340_0%,#163a5f_55%,#3d5a80_100%)] text-white transition hover:brightness-110"
-              >
-                {preview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={preview}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover opacity-90"
-                  />
-                ) : (
-                  <>
-                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 backdrop-blur">
-                      <ImagePlus size={22} />
+              <div className="grid gap-4 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="group relative flex min-h-[280px] w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--axon-steel)]/35 bg-[linear-gradient(160deg,#0c2340_0%,#163a5f_55%,#3d5a80_100%)] text-white transition hover:brightness-110"
+                >
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={preview}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover opacity-90"
+                    />
+                  ) : (
+                    <>
+                      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-white/10 backdrop-blur">
+                        <ImagePlus size={22} />
+                      </div>
+                      <div className="text-base font-medium">{t("capture.clickUpload")}</div>
+                      <div className="mt-1 text-xs text-white/70">
+                        {t("capture.formatHint")}
+                      </div>
+                    </>
+                  )}
+                  {preview && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 text-left text-xs">
+                      {t("capture.changePhoto")}
                     </div>
-                    <div className="text-base font-medium">{t("capture.clickUpload")}</div>
-                    <div className="mt-1 text-xs text-white/70">
-                      {t("capture.formatHint")}
-                    </div>
-                  </>
-                )}
-                {preview && (
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 text-left text-xs">
-                    {t("capture.changePhoto")}
-                  </div>
-                )}
-              </button>
+                  )}
+                </button>
+                <CaptureGeoPanel value={geo} onChange={setGeo} />
+              </div>
             )}
 
             <input
