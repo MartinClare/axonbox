@@ -1038,7 +1038,7 @@ export default function CaseDetailPage() {
                     <button
                       type="button"
                       disabled={busy || selectedFieldIds.length === 0}
-                      onClick={() => void useSelectedFieldPhotos()}
+                      onClick={() => void linkSelectedFieldPhotos()}
                       className="mt-3 w-full rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white disabled:opacity-50"
                     >
                       {t("case.pickFieldPhotosUse", { n: selectedFieldIds.length })}
