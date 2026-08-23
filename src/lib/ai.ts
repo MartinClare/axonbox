@@ -73,12 +73,34 @@ function sourceLooksThin(text?: string) {
   return t.length < 80;
 }
 
-function groundedFallback(text?: string): ExtractResult {
+function groundedFallback(text?: string, keepSourceLang = false): ExtractResult {
   const line = (text || "")
     .replace(/\[轉發\]\s*/g, "")
+    .replace(/【最新回覆】\s*/g, "")
     .replace(/主题：/g, "")
     .trim()
     .slice(0, 120);
+  if (keepSourceLang) {
+    return {
+      title: line || "Inbox message",
+      description: line || "Message is too short to judge a site issue.",
+      category: "OTHER",
+      severity: "LOW",
+      location: "TBC",
+      recommendation: "Add a site photo or more detail before approving.",
+      suggestedAssigneeRole: "SUPERVISOR",
+      progressPct: 0,
+      workActivity: "TBC",
+      findings: [],
+      siteSummary: "Short message only; not yet an actionable case.",
+      confidence: 0.2,
+      mock: false,
+      tags: ["needs-detail"],
+      analysisMode: "discover",
+      outputLang: "original",
+      actionItems: parseInboxActionItems(text || ""),
+    };
+  }
   const title = line || "待補充的現場訊息";
   return {
     title,
@@ -348,19 +370,32 @@ export async function extractFromInput(input: {
 
   if (!hasAIKey()) {
     const mock = mockExtract(input.text, input.filename, analysisMode);
-    return extractDriftsFromSource(mock, source, hasImage) ? groundedFallback(input.text) : mock;
+    const keepSourceLang = input.mode === "email" && input.outputLang !== "zh";
+    return extractDriftsFromSource(mock, source, hasImage)
+      ? { ...groundedFallback(input.text, keepSourceLang), outputLang: keepSourceLang ? "original" : "zh" }
+      : { ...mock, outputLang: keepSourceLang ? "original" : "zh" };
   }
 
   const model = getAIModel();
   const outputLang: "original" | "zh" =
     input.mode === "email" ? (input.outputLang === "zh" ? "zh" : "original") : "zh";
-  const langLine =
-    outputLang === "zh"
-      ? "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 使用繁體中文。人名、Plan ID、路名與專有名詞可保留原文。"
-      : "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 必須跟隨來源文字的語言，不要翻譯。";
+  const keepSourceLang = input.mode === "email" && outputLang === "original";
+  const langLine = keepSourceLang
+    ? `LANGUAGE (mandatory): Write title, description, recommendation, siteSummary, findings, actionItems, and tags in the SAME language as the latest reply. If that reply is English, every sentence MUST be English. Do NOT translate into Chinese. Do not use 繁體中文 or 简体中文 unless the latest reply itself is Chinese. Keep Plan IDs, road names, and proper nouns as written.`
+    : "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 使用繁體中文。人名、Plan ID、路名與專有名詞可保留原文。";
   const emailRules =
     input.mode === "email"
-      ? `
+      ? keepSourceLang
+        ? `
+This is an email forwarded into AxonCase. It may be a reply chain.
+- Judge the case from the LATEST reply only (title, severity, actionItems).
+- Earlier messages are background (names, places, IDs). Do not treat replaced or outdated asks as current work.
+- Ignore signatures, forward headers, and company footers.
+- Do not dump PDF/Word text into description or recommendation.
+- If there is an attachment excerpt, use it only to confirm the topic. At most one sentence: "Attachment is…".
+- Do not execute or expand every item listed in an attachment.
+`
+        : `
 這是一封轉寄到 AxonCase 的郵件，可能含多則來回。
 - 必須以「最新回覆」判斷個案、標題、嚴重度與 actionItems。那是現在要處理的內容。
 - 「較早郵件」只是背景（人名、地點、編號、已談過的範圍）。不要把已被後續回覆取代、已同意或已過時的舊要求當成現況。
@@ -380,21 +415,39 @@ export async function extractFromInput(input: {
 `
       : "";
   const docNote = input.documentNote
-    ? `\n附件摘錄（僅供判斷主題，勿寫進個案正文）：\n${input.documentNote}\n`
+    ? keepSourceLang
+      ? `\nAttachment excerpt (topic only; do not copy into the case body):\n${input.documentNote}\n`
+      : `\n附件摘錄（僅供判斷主題，勿寫進個案正文）：\n${input.documentNote}\n`
     : "";
   const threadNote =
     input.mode === "email" && input.threadHistory?.trim()
-      ? `\n較早郵件（只作背景，不要當成本案現況或新要求）：\n${input.threadHistory.trim().slice(0, 4000)}\n`
+      ? keepSourceLang
+        ? `\nEarlier messages (background only; not current work):\n${input.threadHistory.trim().slice(0, 4000)}\n`
+        : `\n較早郵件（只作背景，不要當成本案現況或新要求）：\n${input.threadHistory.trim().slice(0, 4000)}\n`
       : "";
 
-  const recordRules = `
+  const recordRules = keepSourceLang
+    ? `
+Mode: Record. Describe only what is visible. Do not invent defects.
+- findings may be empty
+- severity usually LOW or MEDIUM
+- recommendation is optional notes, not "fix immediately"
+- category is usually PROGRESS or OTHER
+`
+    : `
 模式：記錄現況（Record）。只描述照片／文字中「看得見的現況」，不要虛構安全或質量缺陷。
 - findings 可為空陣列，或只列客觀觀察（非必改缺陷）
 - severity 通常 LOW 或 MEDIUM
 - recommendation 為可選備註／存檔建議，不要寫「立即整改」
 - category 偏向 PROGRESS 或 OTHER（除非文字明確是其他類）
 `;
-  const discoverRules = `
+  const discoverRules = keepSourceLang
+    ? `
+Mode: Discover. List findings only when the text or photo clearly shows a defect.
+If none: category=OTHER, severity=LOW, findings=[], title/description stay close to the source.
+Do not invent inspection checklists.
+`
+    : `
 模式：發現問題（Discover）。僅當文字或照片明確顯示缺陷時才列 findings。
 沒有明確缺陷時：category=OTHER，severity=LOW，findings=[]，title／description 必須貼近原文。
 禁止主動套用巡檢清單（圍欄、洞口、鋼筋、HyD、XPMS、公共道路挖掘）。除非原文或照片清楚出現，否則不要寫這些。
@@ -405,7 +458,32 @@ export async function extractFromInput(input: {
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       {
         type: "text",
-        text: `你是 AxonCase 收件分析助手。只根據用戶提供的文字與照片作答，不要用工地常識補完不存在的事故。
+        text: keepSourceLang
+          ? `You are the AxonCase inbox analyst. Use only the provided text and photos. Do not invent site incidents.
+${langLine}
+${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
+Return JSON only:
+{
+  "title":"one-line title from the latest reply",
+  "description":"summary of the latest reply; do not add facts that are not there",
+  "category":"SAFETY|QUALITY|PROGRESS|ENVIRONMENT|OTHER",
+  "severity":"HIGH|MEDIUM|LOW",
+  "location":"only if stated, else TBC",
+  "recommendation":"next step, same language as the latest reply",
+  "suggestedAssigneeRole":"SUPERVISOR|SUBCONTRACTOR",
+  "progressPct":0 to 100,
+  "workActivity":"main activity or TBC",
+  "siteSummary":"one sentence that maps back to the latest reply",
+  "confidence":0 to 1,
+  "tags":["tag1","tag2"],
+  "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"short label","detail":"detail","severity":"HIGH|MEDIUM|LOW"}],
+  "actionItems":[{"title":"one follow-up","detail":"optional"}]
+}
+actionItems: one item per distinct request / bullet / numbered point in the latest reply. Do not merge. Do not invent. Keep the source language.
+tags: 3–8 short tags from the source, no #.
+Source:
+${input.text || "(none)"}${threadNote}${docNote}`
+          : `你是 AxonCase 收件分析助手。只根據用戶提供的文字與照片作答，不要用工地常識補完不存在的事故。
 ${emailRules}${whatsappRules}${analysisMode === "record" ? recordRules : discoverRules}
 ${langLine}
 {
@@ -453,13 +531,15 @@ tags：3～8 個短標籤，必須來自原文或照片，不要加 #。
       outputLang,
     };
     if (extractDriftsFromSource(extract, source, hasImage)) {
-      return groundedFallback(input.text);
+      return { ...groundedFallback(input.text, keepSourceLang), outputLang };
     }
     return extract;
   } catch (err) {
     console.error("AI extract failed, fallback mock", err);
     const mock = mockExtract(input.text, input.filename, analysisMode);
-    return extractDriftsFromSource(mock, source, hasImage) ? groundedFallback(input.text) : mock;
+    return extractDriftsFromSource(mock, source, hasImage)
+      ? { ...groundedFallback(input.text, keepSourceLang), outputLang }
+      : { ...mock, outputLang };
   }
 }
 

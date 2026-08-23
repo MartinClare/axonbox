@@ -951,6 +951,132 @@ export default function InboxPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {extract && (
+                <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                      {t("inbox.proposal")}
+                      {extract.mock ? ` · ${t("inbox.mock")}` : ""}
+                    </div>
+                    {selected.channel === "EMAIL" && extract.outputLang !== "zh" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void translateProposal()}
+                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--axon-line)] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
+                        {t("inbox.translateZh")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[var(--axon-brand)] px-2.5 py-0.5 text-[11px] text-white">
+                      {categoryLabels[extract.category] || extract.category}
+                    </span>
+                    <span className={cn("text-xs font-semibold", SEVERITY_COLORS[extract.severity])}>
+                      {severityLabels[extract.severity]}
+                    </span>
+                  </div>
+                  <div className="text-base font-semibold text-[var(--axon-ink)]">{extract.title}</div>
+                  <p className="text-sm text-slate-600">
+                    {extract.siteSummary || extract.description}
+                  </p>
+                  <div className="text-xs text-slate-500">{t("inbox.location", { loc: extract.location })}</div>
+                  {actionPoints.length > 0 && (
+                    <div className="rounded-lg bg-white px-3 py-2.5">
+                      <div className="text-xs text-slate-400">{t("inbox.mainPoints")}</div>
+                      <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-sm text-slate-700">
+                        {actionPoints.map((item, i) => (
+                          <li key={`${item.title}-${i}`}>
+                            {item.title}
+                            {item.detail ? (
+                              <div className="text-xs text-slate-500">{item.detail}</div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ol>
+                      {selected.status !== "PROCESSED" && actionPoints.length > 1 && (
+                          <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={splitTasks}
+                              onChange={(e) => setSplitTasks(e.target.checked)}
+                            />
+                            <span>
+                              <span className="font-medium">{t("inbox.splitTasks")}</span>
+                              <span className="mt-0.5 block text-xs text-slate-400">
+                                {splitTasks ? t("inbox.splitHint") : t("inbox.keepTogether")}
+                              </span>
+                            </span>
+                          </label>
+                        )}
+                    </div>
+                  )}
+                  <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-slate-700">
+                    <span className="text-xs text-slate-400">{t("inbox.suggestedActions")}</span>
+                    <div className="mt-1">{extract.recommendation}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                {selected.status === "DISMISSED" ? (
+                  <>
+                    <button
+                      disabled={busy}
+                      onClick={() => bulkRestore([selected.id])}
+                      className="axon-btn axon-btn-primary"
+                    >
+                      <Undo2 size={14} />
+                      {t("inbox.restore")}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => bulkDelete([selected.id])}
+                      className="axon-btn axon-btn-ghost text-rose-700 sm:col-span-2"
+                    >
+                      <Trash2 size={14} />
+                      {t("inbox.purge")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button disabled={busy} onClick={analyze} className="axon-btn axon-btn-primary">
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      {t("inbox.analyze")}
+                    </button>
+                    {selected.status === "PROCESSED" ? (
+                      <button disabled={busy} onClick={undoApprove} className="axon-btn axon-btn-ghost">
+                        <Undo2 size={14} />
+                        {t("inbox.undoApprove")}
+                      </button>
+                    ) : (
+                      <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
+                        <CheckCircle2 size={14} />
+                        {splitTasks && actionPoints.length > 1
+                          ? t("inbox.approveSplit", { n: actionPoints.length })
+                          : t("inbox.approve")}
+                      </button>
+                    )}
+                    <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
+                      <Trash2 size={14} />
+                      {t("inbox.dismiss")}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {selected.case && (
+                <button
+                  onClick={() => router.push(`/cases/${selected.case!.id}`)}
+                  className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-left text-sm text-emerald-800"
+                >
+                  {t("inbox.linkedCase", { caseNo: selected.case.caseNo, title: selected.case.title })}
+                </button>
+              )}
+
               <div>
                 <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   {t("inbox.original")}
@@ -1047,132 +1173,6 @@ export default function InboxPage() {
                   </div>
                 )}
               </div>
-
-              <div className="grid gap-2 sm:grid-cols-3">
-                {selected.status === "DISMISSED" ? (
-                  <>
-                    <button
-                      disabled={busy}
-                      onClick={() => bulkRestore([selected.id])}
-                      className="axon-btn axon-btn-primary"
-                    >
-                      <Undo2 size={14} />
-                      {t("inbox.restore")}
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => bulkDelete([selected.id])}
-                      className="axon-btn axon-btn-ghost text-rose-700 sm:col-span-2"
-                    >
-                      <Trash2 size={14} />
-                      {t("inbox.purge")}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button disabled={busy} onClick={analyze} className="axon-btn axon-btn-primary">
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      {t("inbox.analyze")}
-                    </button>
-                    {selected.status === "PROCESSED" ? (
-                      <button disabled={busy} onClick={undoApprove} className="axon-btn axon-btn-ghost">
-                        <Undo2 size={14} />
-                        {t("inbox.undoApprove")}
-                      </button>
-                    ) : (
-                      <button disabled={busy} onClick={processToTask} className="axon-btn axon-btn-ok">
-                        <CheckCircle2 size={14} />
-                        {splitTasks && actionPoints.length > 1
-                          ? t("inbox.approveSplit", { n: actionPoints.length })
-                          : t("inbox.approve")}
-                      </button>
-                    )}
-                    <button disabled={busy} onClick={dismiss} className="axon-btn axon-btn-ghost">
-                      <Trash2 size={14} />
-                      {t("inbox.dismiss")}
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {selected.case && (
-                <button
-                  onClick={() => router.push(`/cases/${selected.case!.id}`)}
-                  className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-left text-sm text-emerald-800"
-                >
-                  {t("inbox.linkedCase", { caseNo: selected.case.caseNo, title: selected.case.title })}
-                </button>
-              )}
-
-              {extract && (
-                <div className="space-y-3 rounded-2xl border border-[var(--axon-line)] bg-slate-50/80 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                      {t("inbox.proposal")}
-                      {extract.mock ? ` · ${t("inbox.mock")}` : ""}
-                    </div>
-                    {selected.channel === "EMAIL" && extract.outputLang !== "zh" && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void translateProposal()}
-                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--axon-line)] bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Languages size={12} />}
-                        {t("inbox.translateZh")}
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-[var(--axon-brand)] px-2.5 py-0.5 text-[11px] text-white">
-                      {categoryLabels[extract.category] || extract.category}
-                    </span>
-                    <span className={cn("text-xs font-semibold", SEVERITY_COLORS[extract.severity])}>
-                      {severityLabels[extract.severity]}
-                    </span>
-                  </div>
-                  <div className="text-base font-semibold text-[var(--axon-ink)]">{extract.title}</div>
-                  <p className="text-sm text-slate-600">
-                    {extract.siteSummary || extract.description}
-                  </p>
-                  <div className="text-xs text-slate-500">{t("inbox.location", { loc: extract.location })}</div>
-                  {actionPoints.length > 0 && (
-                    <div className="rounded-lg bg-white px-3 py-2.5">
-                      <div className="text-xs text-slate-400">{t("inbox.mainPoints")}</div>
-                      <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-sm text-slate-700">
-                        {actionPoints.map((item, i) => (
-                          <li key={`${item.title}-${i}`}>
-                            {item.title}
-                            {item.detail ? (
-                              <div className="text-xs text-slate-500">{item.detail}</div>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ol>
-                      {selected.status !== "PROCESSED" && actionPoints.length > 1 && (
-                          <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-slate-700">
-                            <input
-                              type="checkbox"
-                              className="mt-0.5"
-                              checked={splitTasks}
-                              onChange={(e) => setSplitTasks(e.target.checked)}
-                            />
-                            <span>
-                              <span className="font-medium">{t("inbox.splitTasks")}</span>
-                              <span className="mt-0.5 block text-xs text-slate-400">
-                                {splitTasks ? t("inbox.splitHint") : t("inbox.keepTogether")}
-                              </span>
-                            </span>
-                          </label>
-                        )}
-                    </div>
-                  )}
-                  <div className="rounded-lg bg-white px-3 py-2.5 text-sm text-slate-700">
-                    <span className="text-xs text-slate-400">{t("inbox.suggestedActions")}</span>
-                    <div className="mt-1">{extract.recommendation}</div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </section>

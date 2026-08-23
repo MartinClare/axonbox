@@ -113,7 +113,7 @@ export function emailAnalysisParts(subject: string, body: string) {
   return {
     latest: focus,
     history,
-    text: [subject ? `主题：${subject}` : "", "【最新回覆】", focus].filter(Boolean).join("\n"),
+    text: [subject ? `Subject: ${subject}` : "", "Latest reply:", focus].filter(Boolean).join("\n"),
     usedThread: Boolean(history),
   };
 }

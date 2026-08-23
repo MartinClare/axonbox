@@ -3,7 +3,6 @@ import {
   analyzeInboxMessage,
   processInboxToEventTask,
 } from "@/lib/inbox";
-import { extractFromInput } from "@/lib/ai";
 import { prisma } from "@/lib/prisma";
 
 export type FromEmailInput = {
@@ -76,20 +75,9 @@ export async function workflowFromEmail(input: FromEmailInput) {
     }
   }
 
-  const text = [
-    input.subject ? `主题：${input.subject}` : "",
-    body,
-    "請將此郵件轉為可執行的工地事件與整改任務。",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const extract = await extractFromInput({
-    text,
-    imageBase64,
-    imageMime,
-    filename: `email-${input.from || "unknown"}`,
-  });
+  const extract = (
+    await analyzeInboxMessage(message.id, { imageBase64, imageMime, outputLang: "original" })
+  ).extract;
 
   await prisma.inboxMessage.update({
     where: { id: message.id },
