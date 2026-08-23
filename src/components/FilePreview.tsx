@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Paperclip, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Loader2, Paperclip, Trash2, X } from "lucide-react";
 import { isProbablyImage } from "@/lib/media";
 import { useI18n } from "@/components/I18nProvider";
 
@@ -32,13 +32,17 @@ export function FilePreview({
   index,
   onIndexChange,
   onClose,
+  onDelete,
 }: {
   items: PreviewFile[];
   index: number;
   onIndexChange: (index: number) => void;
   onClose: () => void;
+  /** When set, shows a delete control (e.g. field evidence). */
+  onDelete?: (index: number) => void | Promise<void>;
 }) {
   const { t } = useI18n();
+  const [deleting, setDeleting] = useState(false);
   const item = items[index];
   const src = item?.src || null;
 
@@ -53,6 +57,17 @@ export function FilePreview({
   }, [index, items.length, onClose, onIndexChange]);
 
   if (!item) return null;
+
+  async function handleDelete() {
+    if (!onDelete || deleting) return;
+    if (!window.confirm(t("evidence.deleteConfirm"))) return;
+    setDeleting(true);
+    try {
+      await onDelete(index);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div
@@ -86,6 +101,18 @@ export function FilePreview({
               <ExternalLink size={18} />
             </a>
           </>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            disabled={deleting}
+            className="rounded-lg p-2 text-red-200 hover:bg-red-500/20 disabled:opacity-50"
+            onClick={() => void handleDelete()}
+            title={t("evidence.delete")}
+            aria-label={t("evidence.delete")}
+          >
+            {deleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+          </button>
         )}
         <button type="button" className="rounded-lg p-2 hover:bg-white/10" onClick={onClose}>
           <X size={18} />
@@ -147,6 +174,19 @@ export function FilePreview({
           </button>
         )}
       </div>
+      {onDelete && (
+        <div className="shrink-0 pt-2" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={() => void handleDelete()}
+            className="mx-auto flex w-full max-w-sm items-center justify-center gap-2 rounded-xl bg-red-600/90 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {t("evidence.delete")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

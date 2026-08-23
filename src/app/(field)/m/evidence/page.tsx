@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, X } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { FilePreview } from "@/components/FilePreview";
 import { mediaUrl } from "@/lib/media";
@@ -13,6 +13,7 @@ export default function FieldEvidencePage() {
   const [items, setItems] = useState<EvidenceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     const res = await apiFetch<{ items?: EvidenceItem[] }>("/api/evidence?pageSize=48");
@@ -23,6 +24,24 @@ export default function FieldEvidencePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function deleteAt(index: number) {
+    const item = items[index];
+    if (!item) return;
+    setError("");
+    const res = await apiFetch(`/api/evidence/${item.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError(res.error || t("evidence.deleteFail"));
+      return;
+    }
+    const next = items.filter((x) => x.id !== item.id);
+    setItems(next);
+    if (next.length === 0) {
+      setPreviewIndex(null);
+      return;
+    }
+    setPreviewIndex(Math.min(index, next.length - 1));
+  }
 
   if (loading) {
     return (
@@ -39,27 +58,42 @@ export default function FieldEvidencePage() {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-semibold text-[var(--axon-ink)]">{t("field.tab.evidence")}</h1>
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="grid grid-cols-3 gap-1.5">
         {items.map((item, idx) => {
           const src = mediaUrl(item.filePath);
           const showImg = src && isEvidenceImage(item);
           return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setPreviewIndex(idx)}
-              className="aspect-square overflow-hidden rounded-lg bg-slate-100"
-            >
-              {showImg ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={item.title} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full flex-col items-center justify-center gap-1 px-1 text-slate-400">
-                  <FileText size={18} />
-                  <span className="line-clamp-2 text-[10px] leading-tight">{item.title}</span>
-                </span>
-              )}
-            </button>
+            <div key={item.id} className="relative aspect-square">
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(idx)}
+                className="h-full w-full overflow-hidden rounded-lg bg-slate-100"
+              >
+                {showImg ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={src} alt={item.title} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full flex-col items-center justify-center gap-1 px-1 text-slate-400">
+                    <FileText size={18} />
+                    <span className="line-clamp-2 text-[10px] leading-tight">{item.title}</span>
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!window.confirm(t("evidence.deleteConfirm"))) return;
+                  void deleteAt(idx);
+                }}
+                className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/75 text-white shadow-sm"
+                aria-label={t("evidence.delete")}
+              >
+                <X size={14} strokeWidth={2.5} />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -73,6 +107,7 @@ export default function FieldEvidencePage() {
           index={previewIndex}
           onIndexChange={setPreviewIndex}
           onClose={() => setPreviewIndex(null)}
+          onDelete={deleteAt}
         />
       )}
     </div>

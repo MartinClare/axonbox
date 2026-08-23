@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Camera, ChevronRight, FileText, ListChecks, Loader2 } from "lucide-react";
+import { Camera, ChevronRight, FileText, ListChecks, Loader2, X } from "lucide-react";
 import { apiFetch, asArray } from "@/lib/api-client";
 import { mediaUrl } from "@/lib/media";
 import { useI18n } from "@/components/I18nProvider";
+import { FilePreview } from "@/components/FilePreview";
 import { inboxFileSrc, inboxSnippet, waitingInbox, type FieldInboxRow } from "@/lib/field-inbox";
 import type { EvidenceItem } from "@/components/evidence/types";
 
@@ -17,6 +18,8 @@ export default function FieldHomePage() {
   const [photos, setPhotos] = useState<EvidenceItem[]>([]);
   const [myOpenCount, setMyOpenCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     const [inboxRes, evRes, tasksRes] = await Promise.all([
@@ -36,6 +39,24 @@ export default function FieldHomePage() {
     void load();
   }, [load]);
 
+  async function deleteAt(index: number) {
+    const item = photos[index];
+    if (!item) return;
+    setError("");
+    const res = await apiFetch(`/api/evidence/${item.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError(res.error || t("evidence.deleteFail"));
+      return;
+    }
+    const next = photos.filter((x) => x.id !== item.id);
+    setPhotos(next);
+    if (next.length === 0) {
+      setPreviewIndex(null);
+      return;
+    }
+    setPreviewIndex(Math.min(index, next.length - 1));
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-16 text-slate-400">
@@ -43,6 +64,8 @@ export default function FieldHomePage() {
       </div>
     );
   }
+
+  const recent = photos.slice(0, 6);
 
   return (
     <div className="space-y-5">
@@ -109,27 +132,43 @@ export default function FieldHomePage() {
             {t("field.openAll")}
           </Link>
         </div>
-        {photos.length === 0 ? (
+        {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {recent.length === 0 ? (
           <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">{t("field.emptyEvidence")}</p>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
-            {photos.slice(0, 6).map((item) => {
+            {recent.map((item, idx) => {
               const src = mediaUrl(item.filePath);
               return (
-                <Link
-                  key={item.id}
-                  href="/m/evidence"
-                  className="aspect-square overflow-hidden rounded-lg bg-slate-100"
-                >
-                  {src ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={src} alt={item.title} className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full items-center justify-center text-slate-400">
-                      <FileText size={16} />
-                    </span>
-                  )}
-                </Link>
+                <div key={item.id} className="relative aspect-square">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewIndex(idx)}
+                    className="h-full w-full overflow-hidden rounded-lg bg-slate-100"
+                  >
+                    {src ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={src} alt={item.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-slate-400">
+                        <FileText size={16} />
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!window.confirm(t("evidence.deleteConfirm"))) return;
+                      void deleteAt(idx);
+                    }}
+                    className="absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/75 text-white shadow-sm"
+                    aria-label={t("evidence.delete")}
+                  >
+                    <X size={14} strokeWidth={2.5} />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -139,6 +178,20 @@ export default function FieldHomePage() {
       <Link href="/install" className="block text-center text-xs text-slate-400">
         {t("field.installHint")}
       </Link>
+
+      {previewIndex != null && recent[previewIndex] && (
+        <FilePreview
+          items={recent.map((item) => ({
+            name: item.title,
+            src: mediaUrl(item.filePath),
+            mime: item.mime,
+          }))}
+          index={previewIndex}
+          onIndexChange={setPreviewIndex}
+          onClose={() => setPreviewIndex(null)}
+          onDelete={deleteAt}
+        />
+      )}
     </div>
   );
 }
