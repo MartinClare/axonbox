@@ -2,26 +2,33 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Camera, ChevronRight, FileText, Loader2 } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { Camera, ChevronRight, FileText, ListChecks, Loader2 } from "lucide-react";
+import { apiFetch, asArray } from "@/lib/api-client";
 import { mediaUrl } from "@/lib/media";
 import { useI18n } from "@/components/I18nProvider";
 import { inboxFileSrc, inboxSnippet, waitingInbox, type FieldInboxRow } from "@/lib/field-inbox";
 import type { EvidenceItem } from "@/components/evidence/types";
 
+type TaskCountRow = { id: string; status: string };
+
 export default function FieldHomePage() {
   const { t } = useI18n();
   const [inbox, setInbox] = useState<FieldInboxRow[]>([]);
   const [photos, setPhotos] = useState<EvidenceItem[]>([]);
+  const [myOpenCount, setMyOpenCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const [inboxRes, evRes] = await Promise.all([
+    const [inboxRes, evRes, tasksRes] = await Promise.all([
       apiFetch<{ messages?: FieldInboxRow[] }>("/api/inbox?channel=WHATSAPP"),
       apiFetch<{ items?: EvidenceItem[] }>("/api/evidence?pageSize=8"),
+      apiFetch<TaskCountRow[]>("/api/tasks?mine=1"),
     ]);
     if (inboxRes.ok) setInbox(waitingInbox(inboxRes.data.messages || []));
     if (evRes.ok) setPhotos((evRes.data.items || []).filter((i) => Boolean(mediaUrl(i.filePath))));
+    if (tasksRes.ok) {
+      setMyOpenCount(asArray<TaskCountRow>(tasksRes.data).filter((task) => task.status !== "DONE").length);
+    }
     setLoading(false);
   }, []);
 
@@ -56,6 +63,22 @@ export default function FieldHomePage() {
           <span className="text-xs text-white/80">{t("field.saveEvidence")}</span>
         </span>
         <ChevronRight size={18} />
+      </Link>
+
+      <Link
+        href="/m/tasks"
+        className="flex items-center gap-3 rounded-2xl bg-white px-4 py-4 ring-1 ring-[var(--axon-line)]"
+      >
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--axon-sand)] text-[var(--axon-ink)]">
+          <ListChecks size={22} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-semibold text-[var(--axon-ink)]">{t("field.myTasks")}</span>
+          <span className="text-xs text-slate-500">
+            {myOpenCount > 0 ? `${myOpenCount}` : t("field.emptyMyTasks")}
+          </span>
+        </span>
+        <ChevronRight size={18} className="text-slate-300" />
       </Link>
 
       <section>

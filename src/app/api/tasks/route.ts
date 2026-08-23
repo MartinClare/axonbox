@@ -63,14 +63,17 @@ export async function DELETE() {
 }
 
 export async function GET(req: NextRequest) {
-  const { error } = await requireSession();
+  const { session, error } = await requireSession();
   if (error) return error;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const archived = req.nextUrl.searchParams.get("archived") === "1";
   const scope = req.nextUrl.searchParams.get("scope"); // case | meeting | all
+  const mine = req.nextUrl.searchParams.get("mine") === "1";
+  const userId = (session!.user as { id?: string }).id;
   const where: Prisma.TaskWhereInput = {
     ...(status ? { status } : {}),
     archived,
+    ...(mine && userId ? { assigneeId: userId } : {}),
     ...(scope === "case"
       ? { meetingId: null }
       : scope === "meeting"

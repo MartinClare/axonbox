@@ -30,6 +30,7 @@ function titleFor(pathname: string, t: (k: string) => string) {
   if (pathname.startsWith("/m/inbox")) return t("field.inboxTitle");
   if (pathname.startsWith("/m/evidence")) return t("field.tab.evidence");
   if (pathname.startsWith("/m/cases")) return t("field.tab.cases");
+  if (pathname.startsWith("/m/tasks")) return t("field.myTasks");
   return t("field.homeTitle");
 }
 
