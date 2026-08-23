@@ -302,6 +302,7 @@ export default function FieldCapturePage() {
       const victim = prev.find((s) => s.id === id);
       if (victim) URL.revokeObjectURL(victim.url);
       const next = prev.filter((s) => s.id !== id);
+      shotCountRef.current = next.length;
       if (activeId === id) setActiveId(next[next.length - 1]?.id || null);
       if (next.length === 0) setSheetOpen(false);
       return next;
@@ -559,34 +560,35 @@ export default function FieldCapturePage() {
           )}
 
           {shots.length > 0 && (
-            <div className="pointer-events-auto absolute inset-x-0 bottom-[7.5rem] z-10 flex gap-2 overflow-x-auto px-4">
+            <div className="pointer-events-auto absolute inset-x-0 bottom-[7.5rem] z-10 flex gap-3 overflow-x-auto px-4 pb-2 pt-3">
               {shots.map((shot, i) => (
-                <div
-                  key={shot.id}
-                  className={cn(
-                    "relative h-14 w-14 shrink-0 overflow-hidden rounded-lg ring-2",
-                    active?.id === shot.id ? "ring-[var(--axon-accent)]" : "ring-white/40",
-                  )}
-                >
+                <div key={shot.id} className="relative shrink-0 pt-1 pr-1">
                   <button
                     type="button"
                     onClick={() => setActiveId(shot.id)}
-                    className="absolute inset-0"
+                    className={cn(
+                      "relative block h-14 w-14 overflow-hidden rounded-lg ring-2",
+                      active?.id === shot.id ? "ring-[var(--axon-accent)]" : "ring-white/40",
+                    )}
                     aria-label={`${i + 1}`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={shot.url} alt="" className="h-full w-full object-cover" />
+                    <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">
+                      {i + 1}
+                    </span>
                   </button>
-                  <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">
-                    {i + 1}
-                  </span>
                   <button
                     type="button"
-                    onClick={() => removeShot(shot.id)}
-                    className="absolute right-0.5 top-0.5 z-10 rounded-full bg-black/70 p-0.5 text-white"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeShot(shot.id);
+                    }}
+                    className="absolute -right-1 -top-1 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-black/85 text-white shadow-sm ring-1 ring-white/30"
                     aria-label={t("common.delete")}
                   >
-                    <X size={10} />
+                    <X size={14} strokeWidth={2.5} />
                   </button>
                 </div>
               ))}
@@ -683,15 +685,32 @@ export default function FieldCapturePage() {
             </span>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {shots.map((shot) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={shot.id}
-                src={shot.url}
-                alt=""
-                className="h-16 w-16 shrink-0 rounded-lg object-cover ring-1 ring-[var(--axon-line)]"
-              />
+          <div className="flex gap-3 overflow-x-auto pb-1 pt-2">
+            {shots.map((shot, i) => (
+              <div key={shot.id} className="relative shrink-0 pr-1 pt-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={shot.url}
+                  alt=""
+                  className="h-16 w-16 rounded-lg object-cover ring-1 ring-[var(--axon-line)]"
+                />
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    removeShot(shot.id);
+                  }}
+                  disabled={Boolean(busy)}
+                  className="absolute -right-1 -top-1 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm disabled:opacity-40"
+                  aria-label={t("common.delete")}
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
+                <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] text-white">
+                  {i + 1}
+                </span>
+              </div>
             ))}
           </div>
 
