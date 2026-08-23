@@ -32,12 +32,13 @@ import {
   isAudioFile,
   isDocumentFile,
   isImageFile,
+  isInlineOrSignatureImage,
   MAX_FILE_BYTES,
-  MAX_FILES,
   parseInboxAttachments,
   resolveInboxFiles,
+  selectInboundAttachments,
 } from "@/lib/inbound-files";
-import { inboxFileBuffer } from "@/lib/inbox-file-bytes";
+import { inboxFileBuffer, materializeInboundAttachments } from "@/lib/inbox-file-bytes";
 import { buildInboxSourcePack, withSourcePack } from "@/lib/inbox-source";
 import { resolveInboxActionItems, type InboxActionItem } from "@/lib/inbox-actions";
 import { saveBuffer } from "@/lib/upload";
@@ -110,7 +111,6 @@ function mergeAttachments(
   const prev = parseInboxAttachments(existingJson).map(compactStoredFile);
   const next = [...prev];
   for (const att of incoming || []) {
-    if (next.length >= MAX_FILES) break;
     if (typeof att === "string") {
       const m = att.match(/^data:([^;]+);base64,(.+)$/);
       if (m) next.push({ name: "attachment", mime: m[1], base64: m[2] });
@@ -131,7 +131,12 @@ function mergeAttachments(
       }),
     );
   }
-  return next.slice(0, MAX_FILES);
+  return selectInboundAttachments(
+    next.map((file) => ({
+      ...file,
+      bytes: file.base64 ? Math.ceil((file.base64.length * 3) / 4) : 0,
+    })),
+  );
 }
 
 export async function persistNormalizedMessages(
@@ -146,6 +151,20 @@ export async function persistNormalizedMessages(
       continue;
     }
     if (!m.body?.trim() && !m.subject?.trim() && !(m.attachments || []).length) continue;
+    const attachments = await materializeInboundAttachments(
+      (m.attachments || []).map((att) =>
+        typeof att === "string"
+          ? { name: "attachment", mime: "application/octet-stream", base64: att }
+            : {
+              name: att.name || "attachment",
+              mime: att.mime || "application/octet-stream",
+              base64: att.base64,
+              filePath: att.filePath,
+              ycloudId: att.ycloudId,
+              ycloudLink: att.ycloudLink,
+            },
+      ),
+    );
     if (m.externalId) {
       const existing = await prisma.inboxMessage.findFirst({
         where: { externalId: m.externalId, channel: m.channel },
@@ -179,7 +198,7 @@ export async function persistNormalizedMessages(
           forwardedByUserId: forwardedBy?.id || null,
           forwardedByName: forwardedBy?.name || null,
         }),
-        attachments: JSON.stringify(m.attachments || []),
+        attachments: JSON.stringify(attachments),
         receivedAt: m.receivedAt || new Date(),
         projectId,
         forwardedByUserId: forwardedBy?.id || null,
@@ -385,7 +404,7 @@ export async function analyzeInboxMessage(
   if (!message) throw new Error("not found");
 
   const files = resolveInboxFiles(message.attachments, message.rawPayload);
-  const photo = files.find(isImageFile);
+  const photo = files.find((file) => isImageFile(file) && !isInlineOrSignatureImage(file));
   const docs = files.filter(isDocumentFile);
   const audios = files.filter(isAudioFile);
 

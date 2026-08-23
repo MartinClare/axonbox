@@ -9,8 +9,15 @@ import {
   type InboundEmail,
 } from "@/lib/email-inbound";
 import type { NormalizedInboxMessage } from "@/lib/connectors";
+import { persistLargeInboxFile } from "@/lib/inbox-file-bytes";
+import {
+  MAX_DOWNLOAD_BYTES,
+  MAX_FILE_BYTES,
+  compactStoredFile,
+  isInlineOrSignatureImage,
+  selectInboundAttachments,
+} from "@/lib/inbound-files";
 
-const MAX_FILE_BYTES = 8_000_000;
 const MAX_MESSAGES = 20;
 
 export async function fetchUnseenInboundEmails(): Promise<NormalizedInboxMessage[]> {
@@ -41,16 +48,38 @@ export async function fetchUnseenInboundEmails(): Promise<NormalizedInboxMessage
         (typeof parsed.text === "string" && parsed.text) ||
         (html ? htmlToText(html) : "");
       const forwarded = unwrapForwarded(rawText);
-      const attachments: InboundAttachment[] = [];
+      const candidates: InboundAttachment[] = [];
       for (const att of parsed.attachments || []) {
-        if (attachments.length >= 8) break;
-        if (att.size && att.size > MAX_FILE_BYTES) continue;
-        attachments.push({
+        const bytes = att.size || att.content.length;
+        if (bytes > MAX_DOWNLOAD_BYTES) continue;
+        const meta = {
           name: att.filename || "attachment",
           mime: att.contentType || "application/octet-stream",
+          bytes,
+          contentDisposition: att.contentDisposition,
+          cid: att.cid,
+          related: att.related,
+        };
+        if (isInlineOrSignatureImage(meta)) continue;
+        if (bytes > MAX_FILE_BYTES) {
+          const persisted = await persistLargeInboxFile(
+            att.content,
+            compactStoredFile({ name: meta.name, mime: meta.mime }),
+          );
+          candidates.push({
+            name: persisted.name,
+            mime: persisted.mime,
+            filePath: persisted.filePath,
+            bytes,
+          });
+          continue;
+        }
+        candidates.push({
+          ...meta,
           base64: att.content.toString("base64"),
         });
       }
+      const attachments = selectInboundAttachments(candidates);
       const email: InboundEmail = {
         from:
           forwarded.from ||

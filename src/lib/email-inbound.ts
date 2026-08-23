@@ -1,9 +1,19 @@
 import type { NormalizedInboxMessage } from "@/lib/connectors";
+import {
+  MAX_DOWNLOAD_BYTES,
+  isInlineOrSignatureImage,
+  selectInboundAttachments,
+} from "@/lib/inbound-files";
 
 export type InboundAttachment = {
   name?: string;
   mime?: string;
   base64?: string;
+  filePath?: string;
+  contentDisposition?: string;
+  cid?: string;
+  related?: boolean;
+  bytes?: number;
 };
 
 export type InboundEmail = {
@@ -16,9 +26,6 @@ export type InboundEmail = {
   attachments: InboundAttachment[];
   raw?: unknown;
 };
-
-const MAX_FILE_BYTES = 8_000_000;
-const MAX_FILES = 8;
 
 export function getInboundAddress(orgAddress?: string | null) {
   return (
@@ -148,21 +155,44 @@ export function unwrapForwarded(text: string) {
 
 function pushFile(
   attachments: InboundAttachment[],
-  file: { name?: string; mime?: string; base64?: string; bytes?: number },
+  file: {
+    name?: string;
+    mime?: string;
+    base64?: string;
+    bytes?: number;
+    contentDisposition?: string;
+    cid?: string;
+    related?: boolean;
+  },
 ) {
-  if (!file.base64) return;
-  const bytes = file.bytes ?? Math.ceil((file.base64.length * 3) / 4);
-  if (bytes > MAX_FILE_BYTES) return;
-  if (attachments.length >= MAX_FILES) return;
+  if (!file.base64 && !file.bytes) return;
+  const bytes = file.bytes ?? Math.ceil(((file.base64 || "").length * 3) / 4);
+  if (bytes > MAX_DOWNLOAD_BYTES) return;
+  if (
+    isInlineOrSignatureImage({
+      name: file.name,
+      mime: file.mime,
+      bytes,
+      contentDisposition: file.contentDisposition,
+      cid: file.cid,
+      related: file.related,
+    })
+  ) {
+    return;
+  }
   attachments.push({
     name: file.name || "attachment",
     mime: file.mime || "application/octet-stream",
-    base64: file.base64.replace(/^data:[^;]+;base64,/, ""),
+    base64: file.base64 ? file.base64.replace(/^data:[^;]+;base64,/, "") : undefined,
+    contentDisposition: file.contentDisposition,
+    cid: file.cid,
+    related: file.related,
+    bytes,
   });
 }
 
 async function fileToAttachment(file: File): Promise<InboundAttachment | null> {
-  if (file.size > MAX_FILE_BYTES) return null;
+  if (file.size > MAX_DOWNLOAD_BYTES) return null;
   const buf = Buffer.from(await file.arrayBuffer());
   return {
     name: file.name || "attachment",
@@ -225,10 +255,13 @@ async function fromRawMime(raw: string): Promise<InboundEmail | null> {
   for (const att of parsed.attachments || []) {
     const mime = att.contentType || "";
     pushFile(attachments, {
-      name: att.filename || "image.jpg",
+      name: att.filename || "attachment",
       mime,
       base64: att.content.toString("base64"),
       bytes: att.size,
+      contentDisposition: att.contentDisposition,
+      cid: att.cid,
+      related: att.related,
     });
   }
   return {
@@ -242,7 +275,7 @@ async function fromRawMime(raw: string): Promise<InboundEmail | null> {
     text: forwarded.text || rawText,
     html: html || undefined,
     messageId: parsed.messageId,
-    attachments,
+    attachments: selectInboundAttachments(attachments),
     raw: { mime: true },
   };
 }
@@ -281,7 +314,7 @@ function fromFormRecord(fields: Record<string, string>, attachments: InboundAtta
     text: forwarded.text || text,
     html: html || undefined,
     messageId: messageId || undefined,
-    attachments: applyAttachmentInfo(fields, attachments),
+    attachments: selectInboundAttachments(applyAttachmentInfo(fields, attachments)),
     raw: { from, to: envelope.to, subject, messageId },
   };
 }
@@ -349,7 +382,7 @@ function fromJsonPayload(payload: Record<string, unknown>): InboundEmail | null 
     text: forwarded.text || text,
     html: html || undefined,
     messageId: messageId || undefined,
-    attachments,
+    attachments: selectInboundAttachments(attachments),
     raw: payload,
   };
 }
@@ -401,13 +434,21 @@ export function inboundToNormalized(email: InboundEmail): NormalizedInboxMessage
     sender: email.from,
     subject: email.subject,
     body: email.text,
-    attachments: email.attachments.map((a) => ({
-      name: a.name,
-      mime: a.mime,
-      base64: a.base64,
-    })),
+    attachments: selectInboundAttachments(
+      email.attachments.map((a) => ({
+        name: a.name,
+        mime: a.mime,
+        base64: a.base64,
+        filePath: a.filePath,
+        contentDisposition: a.contentDisposition,
+        cid: a.cid,
+        related: a.related,
+        bytes: a.bytes,
+      })),
+    ),
     receivedAt: new Date(),
     rawPayload: {
+      ...(email.raw && typeof email.raw === "object" ? (email.raw as Record<string, unknown>) : {}),
       from: email.from,
       to: email.to,
       mailbox: mailboxAlias(email.to),

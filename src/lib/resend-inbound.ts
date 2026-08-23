@@ -5,6 +5,13 @@ import {
   type InboundAttachment,
   type InboundEmail,
 } from "@/lib/email-inbound";
+import { persistLargeInboxFile } from "@/lib/inbox-file-bytes";
+import {
+  MAX_DOWNLOAD_BYTES,
+  MAX_FILE_BYTES,
+  compactStoredFile,
+  selectInboundAttachments,
+} from "@/lib/inbound-files";
 
 type ResendReceived = {
   id?: string;
@@ -19,6 +26,9 @@ type ResendReceived = {
     id?: string;
     filename?: string;
     content_type?: string;
+    content_disposition?: string;
+    content_id?: string;
+    size?: number;
     download_url?: string;
   }>;
 };
@@ -32,6 +42,34 @@ function isResendReceivedEvent(payload: Record<string, unknown>) {
   if (payload.type !== "email.received") return false;
   const data = payload.data;
   return Boolean(data && typeof data === "object" && (data as { email_id?: string }).email_id);
+}
+
+async function listReceivedAttachments(
+  apiKey: string,
+  emailId: string,
+): Promise<
+  Array<{
+    id?: string;
+    filename?: string;
+    content_type?: string;
+    content_disposition?: string;
+    content_id?: string;
+    size?: number;
+  }>
+> {
+  const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}/attachments`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data?: Array<Record<string, unknown>> };
+  return (json.data || []).map((att) => ({
+    id: typeof att.id === "string" ? att.id : undefined,
+    filename: typeof att.filename === "string" ? att.filename : undefined,
+    content_type: typeof att.content_type === "string" ? att.content_type : undefined,
+    content_disposition: typeof att.content_disposition === "string" ? att.content_disposition : undefined,
+    content_id: typeof att.content_id === "string" ? att.content_id : undefined,
+    size: typeof att.size === "number" ? att.size : undefined,
+  }));
 }
 
 async function fetchAttachmentBase64(
@@ -66,16 +104,45 @@ async function receivedToInbound(
   const forwarded = unwrapForwarded(rawText);
   const attachments: InboundAttachment[] = [];
   const emailId = email.id || fallbackId;
-  for (const att of email.attachments || []) {
-    if (attachments.length >= 8) break;
+  const listed = emailId ? await listReceivedAttachments(apiKey, emailId) : [];
+  const source = listed.length ? listed : email.attachments || [];
+  const ranked = selectInboundAttachments(
+    source.map((att) => ({
+      id: att.id,
+      name: att.filename || "attachment",
+      mime: att.content_type || "application/octet-stream",
+      contentDisposition: att.content_disposition,
+      cid: att.content_id,
+      bytes: att.size,
+    })),
+  );
+  for (const att of ranked) {
     if (!att.id || !emailId) continue;
     const base64 = await fetchAttachmentBase64(apiKey, emailId, att.id);
     if (!base64) continue;
-    if (Math.ceil((base64.length * 3) / 4) > 8_000_000) continue;
+    const bytes = Math.ceil((base64.length * 3) / 4);
+    if (bytes > MAX_DOWNLOAD_BYTES) continue;
+    if (bytes > MAX_FILE_BYTES) {
+      const persisted = await persistLargeInboxFile(
+        Buffer.from(base64, "base64"),
+        compactStoredFile({
+          name: att.name,
+          mime: att.mime,
+        }),
+      );
+      attachments.push({
+        name: persisted.name,
+        mime: persisted.mime,
+        filePath: persisted.filePath,
+        bytes,
+      });
+      continue;
+    }
     attachments.push({
-      name: att.filename || "attachment",
-      mime: att.content_type || "application/octet-stream",
+      name: att.name,
+      mime: att.mime,
       base64,
+      bytes,
     });
   }
 

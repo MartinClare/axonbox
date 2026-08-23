@@ -128,7 +128,12 @@ export function resolveInboxFiles(
     if (out.some((f) => fileIdentity(f) === key || f.name === extra.name)) continue;
     out.push(extra);
   }
-  return out.slice(0, MAX_FILES);
+  return selectInboundAttachments(
+    out.map((file) => ({
+      ...file,
+      bytes: file.base64 ? Math.ceil(file.base64.length * 0.75) : 0,
+    })),
+  );
 }
 
 export function extOf(name: string) {
@@ -146,15 +151,75 @@ export function isAudioFile(file: { mime?: string; name?: string }) {
   return /\.(ogg|opus|mp3|m4a|wav|webm|aac)$/i.test(file.name || "");
 }
 
+export type AttachmentMeta = {
+  name?: string;
+  mime?: string;
+  bytes?: number;
+  contentDisposition?: string;
+  cid?: string;
+  related?: boolean;
+};
+
+export function isSpreadsheetFile(file: { mime?: string; name?: string }) {
+  const mime = (file.mime || "").toLowerCase();
+  const ext = extOf(file.name || "");
+  return (
+    mime.includes("spreadsheet") ||
+    mime.includes("excel") ||
+    /^(xlsx?|xlsm|xlsb|csv)$/.test(ext)
+  );
+}
+
 export function isDocumentFile(file: { mime?: string; name?: string }) {
   const mime = (file.mime || "").toLowerCase();
   const ext = extOf(file.name || "");
   return (
+    isSpreadsheetFile(file) ||
     mime.includes("pdf") ||
     mime.includes("word") ||
     mime.includes("officedocument.wordprocessing") ||
-    /^(pdf|docx?)$/.test(ext)
+    mime.includes("officedocument.presentation") ||
+    mime.includes("ms-powerpoint") ||
+    /^(pdf|docx?|pptx?)$/.test(ext)
   );
+}
+
+/** Outlook/Gmail signature logos and CID images from quoted mail — not case files. */
+export function isInlineOrSignatureImage(file: AttachmentMeta) {
+  if (!isImageFile(file)) return false;
+  const name = (file.name || "").toLowerCase();
+  const disp = (file.contentDisposition || "").toLowerCase();
+  if (file.related) return true;
+  if (disp === "inline") return true;
+  if (file.cid) return true;
+  if (/^image\d{2,4}\.(png|jpe?g|gif|bmp|webp)$/i.test(name)) return true;
+  if (/(^|[-_ .])(logo|signature|sig)([-_ .]|$)/i.test(name)) return true;
+  if (/^cid:/i.test(name) || /@/.test(name)) return true;
+  const bytes = file.bytes ?? 0;
+  if (bytes > 0 && bytes < 80_000) return true;
+  return false;
+}
+
+function attachmentRank(file: AttachmentMeta) {
+  if (isSpreadsheetFile(file)) return 100;
+  if (isDocumentFile(file)) return 80;
+  if (isImageFile(file) && !isInlineOrSignatureImage(file)) return 30;
+  if (isAudioFile(file)) return 20;
+  return 10;
+}
+
+/** Keep real documents (Excel/PDF/Word) and drop thread logos before applying the cap. */
+export function selectInboundAttachments<T extends AttachmentMeta>(
+  files: T[],
+  max = MAX_FILES,
+): T[] {
+  const kept = files.filter((file) => !isInlineOrSignatureImage(file));
+  return kept
+    .map((file, index) => ({ file, index, rank: attachmentRank(file) }))
+    .sort((a, b) => b.rank - a.rank || a.index - b.index)
+    .slice(0, max)
+    .sort((a, b) => a.index - b.index)
+    .map((row) => row.file);
 }
 
 export function evidenceTypeFor(file: { mime?: string; name?: string }) {
@@ -164,7 +229,7 @@ export function evidenceTypeFor(file: { mime?: string; name?: string }) {
 }
 
 export function emailRefersToAttachment(text: string) {
-  return /附件|附上|附檔|請參[閱考]|詳見|見附件|as attached|see attached|please see|refer to|attached (pdf|doc|file)|please find/i.test(
+  return /附件|附上|附檔|請參[閱考]|詳見|見附件|as attached|see attached|please see|refer to|attached (pdf|doc|file|excel|xlsx?|spreadsheet)|please find|traffic (flow|forecast|data)|請(?:查收|參閱).{0,40}(?:excel|xlsx|附件)/i.test(
     text,
   );
 }
@@ -185,10 +250,39 @@ export async function excerptFromDocument(buf: Buffer, file: { mime?: string; na
     if (mime.includes("word") || ext === "docx") {
       return cleanExcerpt(await textFromDocx(buf));
     }
+    if (isSpreadsheetFile(file)) {
+      return cleanExcerpt(await textFromSpreadsheet(buf, ext));
+    }
   } catch (err) {
     console.error("[inbound-files] excerpt failed", file.name, err);
   }
   return "";
+}
+
+async function textFromSpreadsheet(buf: Buffer, ext: string) {
+  if (ext === "xls") return "";
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buf as never);
+  const lines: string[] = [];
+  for (const sheet of workbook.worksheets.slice(0, 3)) {
+    lines.push(`Sheet: ${sheet.name}`);
+    let n = 0;
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      if (n >= 8) return;
+      const cells = Array.isArray(row.values)
+        ? row.values
+            .slice(1)
+            .map((v) => (v == null ? "" : String(typeof v === "object" && v && "text" in v ? (v as { text: string }).text : v)))
+            .join("\t")
+        : "";
+      if (cells.trim()) {
+        lines.push(cells);
+        n += 1;
+      }
+    });
+  }
+  return lines.join("\n");
 }
 
 async function textFromDocx(buf: Buffer) {

@@ -4,6 +4,7 @@ import {
   compactStoredFile,
   MAX_DOWNLOAD_BYTES,
   MAX_FILE_BYTES,
+  selectInboundAttachments,
   type StoredInboundFile,
 } from "@/lib/inbound-files";
 import { getStoredFile, objectKeyFromPath } from "@/lib/storage";
@@ -42,6 +43,49 @@ export function shouldEmbedBase64(bytes: number) {
   return bytes > 0 && bytes <= MAX_FILE_BYTES;
 }
 
+type MaterializeInput = {
+  name?: string;
+  mime?: string;
+  base64?: string;
+  filePath?: string;
+  ycloudId?: string;
+  ycloudLink?: string;
+  contentDisposition?: string;
+  cid?: string;
+  related?: boolean;
+  bytes?: number;
+};
+
+export async function materializeInboundAttachments(
+  files: MaterializeInput[],
+): Promise<StoredInboundFile[]> {
+  const candidates = files
+    .map((file) => {
+      const base64 = file.base64?.replace(/^data:[^;]+;base64,/, "") || undefined;
+      const bytes = file.bytes ?? (base64 ? Math.ceil((base64.length * 3) / 4) : 0);
+      return {
+        ...file,
+        name: file.name || "attachment",
+        mime: file.mime || "application/octet-stream",
+        base64,
+        bytes,
+      };
+    })
+    .filter((file) => file.base64 || file.filePath || file.ycloudLink || file.ycloudId);
+
+  const selected = selectInboundAttachments(candidates);
+  const out: StoredInboundFile[] = [];
+  for (const file of selected) {
+    if (file.base64 && file.bytes > MAX_DOWNLOAD_BYTES) continue;
+    if (file.base64 && file.bytes > MAX_FILE_BYTES) {
+      out.push(await persistLargeInboxFile(Buffer.from(file.base64, "base64"), compactStoredFile(file)));
+      continue;
+    }
+    out.push(compactStoredFile(file));
+  }
+  return out;
+}
+
 async function downloadYCloudFile(file: StoredInboundFile): Promise<Buffer | null> {
   const apiKey = process.env.YCLOUD_API_KEY?.trim();
   const link = file.ycloudLink || "";
@@ -66,6 +110,8 @@ async function downloadYCloudFile(file: StoredInboundFile): Promise<Buffer | nul
 
 function guessExt(mime: string) {
   if (mime.includes("pdf")) return ".pdf";
+  if (mime.includes("spreadsheet") || mime.includes("excel")) return ".xlsx";
+  if (mime.includes("wordprocessing") || mime.includes("msword")) return ".docx";
   if (mime.includes("png")) return ".png";
   if (mime.includes("jpeg") || mime.includes("jpg")) return ".jpg";
   if (mime.includes("webp")) return ".webp";

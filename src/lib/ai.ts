@@ -381,26 +381,30 @@ export async function extractFromInput(input: {
     input.mode === "email" ? (input.outputLang === "zh" ? "zh" : "original") : "zh";
   const keepSourceLang = input.mode === "email" && outputLang === "original";
   const langLine = keepSourceLang
-    ? `LANGUAGE (mandatory): Write title, description, recommendation, siteSummary, findings, actionItems, and tags in the SAME language as the latest reply. If that reply is English, every sentence MUST be English. Do NOT translate into Chinese. Do not use 繁體中文 or 简体中文 unless the latest reply itself is Chinese. Keep Plan IDs, road names, and proper nouns as written.`
+    ? `LANGUAGE (mandatory): Write title, description, recommendation, siteSummary, findings, actionItems, and tags in the SAME language as the primary message (the first forwarded email, or the latest reply in a thread). If that message is English, every sentence MUST be English. Do NOT translate into Chinese. Do not use 繁體中文 or 简体中文 unless that message itself is Chinese. Keep Plan IDs, road names, and proper nouns as written.`
     : "只回傳純 JSON。title、description、recommendation、siteSummary、findings、actionItems、tags 使用繁體中文。人名、Plan ID、路名與專有名詞可保留原文。";
   const emailRules =
     input.mode === "email"
       ? keepSourceLang
         ? `
 This is an email forwarded into AxonCase. It may be a reply chain.
-- Judge the case from the LATEST reply only (title, severity, actionItems).
-- Earlier messages are background (names, places, IDs). Do not treat replaced or outdated asks as current work.
-- Ignore signatures, forward headers, and company footers.
-- Do not dump PDF/Word text into description or recommendation.
+- The PRIMARY message is the first forwarded email at the top (after any thin forward wrapper). That is the current work.
+- In a reply chain without a forward wrapper, use the latest reply as the primary message.
+- Earlier / quoted messages are background (names, places, IDs). Do not treat replaced or outdated asks as current work.
+- Ignore signatures, forward headers, company footers, and inline logo images.
+- Prefer a real document attachment (Excel / PDF / Word) over signature or logo images.
+- Do not dump PDF/Word/Excel text into description or recommendation.
 - If there is an attachment excerpt, use it only to confirm the topic. At most one sentence: "Attachment is…".
 - Do not execute or expand every item listed in an attachment.
 `
         : `
 這是一封轉寄到 AxonCase 的郵件，可能含多則來回。
-- 必須以「最新回覆」判斷個案、標題、嚴重度與 actionItems。那是現在要處理的內容。
+- 必須以「第一封被轉寄的郵件」（轉寄包裝後最上方那封）判斷個案、標題、嚴重度與 actionItems。那是現在要處理的內容。
+- 若不是轉寄、只是回覆串，才用最新回覆當主郵件。
 - 「較早郵件」只是背景（人名、地點、編號、已談過的範圍）。不要把已被後續回覆取代、已同意或已過時的舊要求當成現況。
-- 忽略簽名檔、轉寄頁首、公司頁尾。
-- 不要把 PDF／Word 全文、條款或工作清單寫進 description 或 recommendation。
+- 忽略簽名檔、轉寄頁首、公司頁尾、以及郵件裡的 logo／簽名圖片。
+- 附件優先採用 Excel／PDF／Word，不要把上一封信的 logo 當成個案附件。
+- 不要把 PDF／Word／Excel 全文、條款或工作清單寫進 description 或 recommendation。
 - 若有「附件摘錄」，只用來確認這是什麼個案（標題、類別、地點、嚴重度）。最多在 description 加一句「附件為…」。
 - 不要執行或展開附件裡提到的所有事項。
 `
@@ -464,22 +468,22 @@ ${langLine}
 ${emailRules}${analysisMode === "record" ? recordRules : discoverRules}
 Return JSON only:
 {
-  "title":"one-line title from the latest reply",
-  "description":"summary of the latest reply; do not add facts that are not there",
+  "title":"one-line title from the primary forwarded message",
+  "description":"summary of the primary forwarded message; do not add facts that are not there",
   "category":"SAFETY|QUALITY|PROGRESS|ENVIRONMENT|OTHER",
   "severity":"HIGH|MEDIUM|LOW",
   "location":"only if stated, else TBC",
-  "recommendation":"next step, same language as the latest reply",
+  "recommendation":"next step, same language as the primary message",
   "suggestedAssigneeRole":"SUPERVISOR|SUBCONTRACTOR",
   "progressPct":0 to 100,
   "workActivity":"main activity or TBC",
-  "siteSummary":"one sentence that maps back to the latest reply",
+  "siteSummary":"one sentence that maps back to the primary message",
   "confidence":0 to 1,
   "tags":["tag1","tag2"],
   "findings":[{"type":"SAFETY_GAP|QUALITY_DEFECT|PROGRESS|ENVIRONMENT|OTHER","label":"short label","detail":"detail","severity":"HIGH|MEDIUM|LOW"}],
   "actionItems":[{"title":"one follow-up","detail":"optional"}]
 }
-actionItems: one item per distinct request / bullet / numbered point in the latest reply. Do not merge. Do not invent. Keep the source language.
+actionItems: one item per distinct request / bullet / numbered point in the primary forwarded message. Do not merge. Do not invent. Keep the source language.
 tags: 3–8 short tags from the source, no #.
 Source:
 ${input.text || "(none)"}${threadNote}${docNote}`

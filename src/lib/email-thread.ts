@@ -1,7 +1,7 @@
 /** Split a forwarded / replied-to email so the newest message is primary. */
 
 const HEADER_SPLIT =
-  /(?:^|\n)(?=(?:From|寄件者)\s*:\s*.+\r?\n(?:Sent|Date|日期|寄件日期)\s*:)/gim;
+  /(?:^|\n)(?=(?:From|寄件者|发件人)\s*:\s*.+\r?\n(?:Sent|Date|日期|寄件日期|发送时间|發送時間)\s*:)/gim;
 const ORIGINAL_SPLIT =
   /(?:^|\n)(?=-{3,}\s*(?:Original Message|原始郵件|原始邮件)\s*-{3,})/gim;
 const ON_WROTE_SPLIT = /(?:^|\n)(?=On .{8,200} wrote:\s*(?:\n|$))/gim;
@@ -107,13 +107,27 @@ export function splitEmailThread(text: string): { latest: string; history: strin
   };
 }
 
+export function isForwardedEmail(subject: string, body: string) {
+  const head = `${subject}\n${(body || "").slice(0, 400)}`;
+  return /^(?:(?:fw|fwd|轉寄|转发|轉發)\s*[:：])/i.test(subject.trim())
+    || /轉寄:|转发:|Begin forwarded message|Forwarded message/i.test(head);
+}
+
 export function emailAnalysisParts(subject: string, body: string) {
   const { latest, history } = splitEmailThread(body);
   const focus = latest.trim() || body.trim();
+  const forwarded = isForwardedEmail(subject, body);
   return {
     latest: focus,
     history,
-    text: [subject ? `Subject: ${subject}` : "", "Latest reply:", focus].filter(Boolean).join("\n"),
+    forwarded,
+    text: [
+      subject ? `Subject: ${subject}` : "",
+      forwarded ? "Primary forwarded message:" : "Latest reply:",
+      focus,
+    ]
+      .filter(Boolean)
+      .join("\n"),
     usedThread: Boolean(history),
   };
 }
