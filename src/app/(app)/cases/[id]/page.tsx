@@ -379,7 +379,7 @@ export default function CaseDetailPage() {
     );
   }
 
-  async function useSelectedFieldPhotos() {
+  async function linkSelectedFieldPhotos() {
     if (!selectedFieldIds.length) return;
     setBusy(true);
     flash("");
