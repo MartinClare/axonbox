@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
     let finalTitle = title;
     let lat = clientLat;
     let lng = clientLng;
-    let headingDeg = clientHeading;
+    const headingDeg = clientHeading;
 
     if (providedAiJson) {
       try {
