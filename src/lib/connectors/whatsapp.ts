@@ -213,6 +213,15 @@ export async function parseYCloudInboundEvent(
 
   if (!inbound) return { ackOnly: true, message: null };
 
+  // Shared YCloud account with Eesee Chat: only intake for OUR display number
+  // (WHATSAPP_DISPLAY_NUMBER, e.g. +85253688279). Ignore Eesee's +85252907211.
+  const ourDigits = normalizePhone(process.env.WHATSAPP_DISPLAY_NUMBER || "");
+  const toDigits = normalizePhone(inbound.to || "");
+  if (ourDigits && toDigits && ourDigits !== toDigits) {
+    console.log("[whatsapp] ignore inbound for other business number", toDigits);
+    return { ackOnly: true, message: null };
+  }
+
   const msgType = String(inbound.type || "text").toLowerCase();
   if (["sticker", "reaction", "button", "interactive", "unsupported"].includes(msgType)) {
     return { ackOnly: true, message: null };
