@@ -72,6 +72,9 @@ export default function FieldCapturePage() {
   const { t, categoryLabels, severityLabels } = useI18n();
   const cameraRef = useRef<HTMLInputElement>(null);
   const albumRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [liveReady, setLiveReady] = useState(false);
   const [shots, setShots] = useState<Shot[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -93,6 +96,42 @@ export default function FieldCapturePage() {
   const active = shots.find((s) => s.id === activeId) || shots[shots.length - 1] || null;
   const hasGeo = geo.lat != null && geo.lng != null;
 
+  function stopLivePreview() {
+    const stream = streamRef.current;
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop();
+      streamRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setLiveReady(false);
+  }
+
+  async function startLivePreview() {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
+    stopLivePreview();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        await video.play().catch(() => undefined);
+      }
+      setLiveReady(true);
+    } catch {
+      setLiveReady(false);
+    }
+  }
+
   useEffect(() => {
     void readDeviceGeo({ timeoutMs: 8000 }).then((next) => {
       if (next.lat != null || next.headingDeg != null) {
@@ -102,7 +141,27 @@ export default function FieldCapturePage() {
   }, []);
 
   useEffect(() => {
+    if (sheetOpen) {
+      stopLivePreview();
+      return;
+    }
+    void startLivePreview();
+    const onVis = () => {
+      if (document.visibilityState === "visible" && !streamRef.current) {
+        void startLivePreview();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      stopLivePreview();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetOpen]);
+
+  useEffect(() => {
+    return () => {
+      stopLivePreview();
       for (const s of shots) URL.revokeObjectURL(s.url);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,6 +172,37 @@ export default function FieldCapturePage() {
     if (next.lat != null || next.headingDeg != null) {
       setGeo({ lat: next.lat, lng: next.lng, headingDeg: next.headingDeg });
     }
+  }
+
+  async function snapFromLivePreview(): Promise<boolean> {
+    const video = videoRef.current;
+    if (!liveReady || !video || video.videoWidth < 2) return false;
+    if (shots.length >= MAX_PHOTOS) return true;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(video, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92),
+    );
+    if (!blob) return false;
+    const file = new File([blob], `field-${Date.now()}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+    addFiles([file]);
+    return true;
+  }
+
+  async function onShutter() {
+    if (shots.length >= MAX_PHOTOS) return;
+    const snapped = await snapFromLivePreview();
+    if (snapped) return;
+    // Native one-shot needs the camera free.
+    stopLivePreview();
+    cameraRef.current?.click();
   }
 
   function addFiles(list: FileList | File[] | null) {
@@ -154,6 +244,8 @@ export default function FieldCapturePage() {
         return next;
       });
       void captureGeo();
+      // Resume live view after native capture returns.
+      if (!sheetOpen) void startLivePreview();
     })();
   }
 
@@ -389,21 +481,26 @@ export default function FieldCapturePage() {
     <div className="flex flex-col">
       {!sheetOpen && (
         <div className="relative flex min-h-[calc(100dvh-8.5rem)] flex-col bg-black">
-          <button
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-            className="absolute inset-0"
-            aria-label={t("field.shot")}
-          >
-            {active ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={active.url} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center text-white/40">
-                <Camera size={36} />
-              </span>
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover",
+              liveReady ? "opacity-100" : "opacity-0",
             )}
-          </button>
+          />
+          {!liveReady && (
+            <div className="absolute inset-0 flex items-center justify-center text-white/40">
+              {active ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={active.url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <Camera size={36} />
+              )}
+            </div>
+          )}
 
           {(hasGeo || geo.headingDeg != null) && (
             <div className="pointer-events-none absolute left-3 top-16 z-10 rounded-full bg-black/50 px-2.5 py-1 text-[11px] text-white/90">
@@ -461,7 +558,7 @@ export default function FieldCapturePage() {
               </button>
               <button
                 type="button"
-                onClick={() => cameraRef.current?.click()}
+                onClick={() => void onShutter()}
                 disabled={shots.length >= MAX_PHOTOS}
                 className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-[3px] border-white bg-white/20 disabled:opacity-40"
                 aria-label={t("field.shot")}
