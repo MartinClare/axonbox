@@ -290,11 +290,11 @@ export default function CapturePage() {
 
           <div className="space-y-4 p-5">
             {mode === "photo" && (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-4">
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  className="group relative flex min-h-[280px] w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--axon-steel)]/35 bg-[linear-gradient(160deg,#0c2340_0%,#163a5f_55%,#3d5a80_100%)] text-white transition hover:brightness-110"
+                  className="group relative flex min-h-[220px] w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[var(--axon-steel)]/35 bg-[linear-gradient(160deg,#0c2340_0%,#163a5f_55%,#3d5a80_100%)] text-white transition hover:brightness-110 md:min-h-[260px]"
                 >
                   {preview ? (
                     // eslint-disable-next-line @next/next/no-img-element

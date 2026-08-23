@@ -218,6 +218,7 @@ function GeoMapEditor({
 
     mapRef.current = map;
     drawOverlay(map, valueRef.current);
+    requestAnimationFrame(() => map.invalidateSize());
 
     return () => {
       map.remove();
@@ -274,7 +275,7 @@ function GeoMapEditor({
 
   return (
     <div className="overflow-hidden rounded-xl ring-1 ring-[var(--axon-line)]">
-      <div ref={mapEl} className="h-[260px] w-full bg-slate-100 md:h-[320px]" />
+      <div ref={mapEl} className="h-[280px] w-full bg-slate-100 md:h-[380px]" />
       <p className="bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{t("capture.geoMapHint")}</p>
     </div>
   );
