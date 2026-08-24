@@ -414,7 +414,11 @@ export async function analyzeInboxMessage(
       const buf = await inboxFileBuffer(audio);
       if (!buf) continue;
       const t = await transcribeAudio(buf, audio.name || "voice.ogg");
-      if (t.text?.trim()) voiceBits.push(`【語音】${t.text.trim()}`);
+      const line = t.text?.trim();
+      if (!line) continue;
+      // Keep placeholder lines out of the body when ASR really failed/blank.
+      if (t.mock && /語音轉寫(空白|失敗|提示)/.test(line)) continue;
+      voiceBits.push(`【語音】${line}`);
     } catch (err) {
       console.error("[inbox] voice STT failed", err);
     }
@@ -422,10 +426,15 @@ export async function analyzeInboxMessage(
 
   let body = message.body || "";
   if (voiceBits.length) {
-    // Avoid duplicating if already transcribed on a previous append
-    const fresh = voiceBits.filter((v) => !body.includes(v));
-    if (fresh.length) {
-      body = [body, ...fresh].filter(Boolean).join("\n");
+    // Replace prior failed/blank ASR stubs so re-analyze can recover.
+    const withoutStubs = body
+      .split("\n")
+      .filter((line) => !/【語音】（語音轉寫(空白|失敗|提示)）/.test(line))
+      .join("\n")
+      .trim();
+    const fresh = voiceBits.filter((v) => !withoutStubs.includes(v));
+    if (fresh.length || withoutStubs !== body.trim()) {
+      body = [withoutStubs, ...fresh].filter(Boolean).join("\n");
       await prisma.inboxMessage.update({
         where: { id },
         data: { body },

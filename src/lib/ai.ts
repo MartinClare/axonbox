@@ -887,14 +887,33 @@ export async function transcribeAudio(buffer: Buffer, filename: string) {
         mock: true,
       };
     }
-    const data = (await res.json()) as {
+    const payload = (await res.json()) as {
       text?: string;
       transcription?: string;
       fused_transcription?: string;
+      data?: {
+        text?: string;
+        transcription?: string | { text?: string; status?: string };
+        fused_transcription?: string | null;
+      };
     };
+    const nested = payload.data;
+    const nestedTranscription =
+      typeof nested?.transcription === "string"
+        ? nested.transcription
+        : nested?.transcription && typeof nested.transcription === "object"
+          ? nested.transcription.text || ""
+          : "";
     const text =
-      data.fused_transcription || data.transcription || data.text || "";
+      (typeof nested?.fused_transcription === "string" && nested.fused_transcription) ||
+      nestedTranscription ||
+      nested?.text ||
+      payload.fused_transcription ||
+      payload.transcription ||
+      payload.text ||
+      "";
     if (!text.trim()) {
+      console.error("[cantonese.ai] STT empty payload", JSON.stringify(payload).slice(0, 400));
       return { text: `（語音轉寫空白）${filename}`, mock: true };
     }
     return { text: text.trim(), mock: false };
